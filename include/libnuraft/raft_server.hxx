@@ -25,8 +25,8 @@ limitations under the License.
 #include "callback.hxx"
 #include "internal_timer.hxx"
 #include "log_store.hxx"
-#include "snapshot_sync_req.hxx"
 #include "rpc_cli.hxx"
+#include "snapshot_sync_req.hxx"
 #include "srv_config.hxx"
 #include "srv_role.hxx"
 #include "srv_state.hxx"
@@ -63,21 +63,20 @@ class raft_server : public std::enable_shared_from_this<raft_server> {
     friend class nuraft_global_mgr;
     friend class raft_server_handler;
     friend class snapshot_io_mgr;
+
 public:
     struct init_options {
         init_options()
             : skip_initial_election_timeout_(false)
             , start_server_in_constructor_(true)
-            , test_mode_flag_(false)
-            {}
+            , test_mode_flag_(false) {}
 
         init_options(bool skip_initial_election_timeout,
                      bool start_server_in_constructor,
                      bool test_mode_flag)
             : skip_initial_election_timeout_(skip_initial_election_timeout)
             , start_server_in_constructor_(start_server_in_constructor)
-            , test_mode_flag_(test_mode_flag)
-            {}
+            , test_mode_flag_(test_mode_flag) {}
 
         /**
          * If `true`, the election timer will not be initiated
@@ -102,7 +101,7 @@ public:
         bool start_server_in_constructor_;
 
         /**
-          * If `true`, test mode is enabled.
+         * If `true`, test mode is enabled.
          */
         bool test_mode_flag_;
     };
@@ -115,18 +114,15 @@ public:
             , leadership_limit_(20)
             , reconnect_limit_(50)
             , leave_limit_(5)
-            , vote_limit_(5)
-            {}
+            , vote_limit_(5) {}
 
-        limits(const limits& src) {
-            *this = src;
-        }
+        limits(const limits& src) { *this = src; }
 
         limits& operator=(const limits& src) {
             pre_vote_rejection_limit_ = src.pre_vote_rejection_limit_.load();
             warning_limit_ = src.warning_limit_.load();
             response_limit_ = src.response_limit_.load();
-            leadership_limit_  = src.leadership_limit_.load();
+            leadership_limit_ = src.leadership_limit_.load();
             reconnect_limit_ = src.reconnect_limit_.load();
             leave_limit_ = src.leave_limit_.load();
             vote_limit_ = src.vote_limit_.load();
@@ -216,8 +212,7 @@ public:
      * @param srv Configuration of server to add.
      * @return `get_accepted()` will be true on success.
      */
-    ptr< cmd_result< ptr<buffer> > >
-        add_srv(const srv_config& srv);
+    ptr<cmd_result<ptr<buffer>>> add_srv(const srv_config& srv);
 
     /**
      * Remove a server from the current cluster.
@@ -227,8 +222,7 @@ public:
      * @param srv_id ID of server to remove.
      * @return `get_accepted()` will be true on success.
      */
-    ptr< cmd_result< ptr<buffer> > >
-        remove_srv(const int srv_id);
+    ptr<cmd_result<ptr<buffer>>> remove_srv(const int srv_id);
 
     /**
      * Append and replicate the given logs.
@@ -242,14 +236,15 @@ public:
      *     In async mode, this function will return immediately, and the
      *     commit results will be set to returned `cmd_result` instance later.
      */
-    ptr< cmd_result< ptr<buffer> > >
-        append_entries(const std::vector< ptr<buffer> >& logs);
+    ptr<cmd_result<ptr<buffer>>> append_entries(const std::vector<ptr<buffer>>& logs);
 
     /**
      * Parameters for `req_ext_cb` callback function.
      */
     struct req_ext_cb_params {
-        req_ext_cb_params() : log_idx(0), log_term(0) {}
+        req_ext_cb_params()
+            : log_idx(0)
+            , log_term(0) {}
 
         /**
          * Raft log index number.
@@ -270,13 +265,14 @@ public:
     /**
      * Callback function type to be called inside extended APIs.
      */
-    using req_ext_cb = std::function< void(const req_ext_cb_params&) >;
+    using req_ext_cb = std::function<void(const req_ext_cb_params&)>;
 
     /**
      * Extended parameters for advanced features.
      */
     struct req_ext_params {
-        req_ext_params() : expected_term_(0) {}
+        req_ext_params()
+            : expected_term_(0) {}
 
         /**
          * If given, this function will be invokced right after the pre-commit
@@ -310,9 +306,8 @@ public:
      *     In async mode, this function will return immediately, and the
      *     commit results will be set to returned `cmd_result` instance later.
      */
-    ptr< cmd_result< ptr<buffer> > >
-        append_entries_ext(const std::vector< ptr<buffer> >& logs,
-                           const req_ext_params& ext_params);
+    ptr<cmd_result<ptr<buffer>>> append_entries_ext(const std::vector<ptr<buffer>>& logs,
+                                                    const req_ext_params& ext_params);
 
     /**
      * Update the priority of given server.
@@ -335,8 +330,7 @@ public:
      * @param srv_id ID of server to update priority.
      * @param new_priority New priority.
      */
-    void broadcast_priority_change(const int srv_id,
-                                   const int new_priority);
+    void broadcast_priority_change(const int srv_id, const int new_priority);
 
     /**
      * Yield current leadership and becomes a follower. Only a leader
@@ -360,8 +354,7 @@ public:
      *                     If `-1`, the successor will be chosen
      *                     automatically.
      */
-    void yield_leadership(bool immediate_yield = false,
-                          int successor_id = -1);
+    void yield_leadership(bool immediate_yield = false, int successor_id = -1);
 
     /**
      * Send a request to the current leader to yield its leadership,
@@ -398,16 +391,14 @@ public:
      *
      * @return Server ID.
      */
-    int32 get_id() const
-    { return id_; }
+    int32 get_id() const { return id_; }
 
     /**
      * Get the current term of this server.
      *
      * @return Term.
      */
-    ulong get_term() const
-    { return state_->get_term(); }
+    ulong get_term() const { return state_->get_term(); }
 
     /**
      * Get the term of given log index number.
@@ -415,48 +406,44 @@ public:
      * @param log_idx Log index number
      * @return Term of given log.
      */
-    ulong get_log_term(ulong log_idx) const
-    { return log_store_->term_at(log_idx); }
+    ulong get_log_term(ulong log_idx) const { return log_store_->term_at(log_idx); }
 
     /**
      * Get the term of the last log.
      *
      * @return Term of the last log.
      */
-    ulong get_last_log_term() const
-    { return log_store_->term_at(get_last_log_idx()); }
+    ulong get_last_log_term() const { return log_store_->term_at(get_last_log_idx()); }
 
     /**
      * Get the last log index number.
      *
      * @return Last log index number.
      */
-    ulong get_last_log_idx() const
-    { return log_store_->next_slot() - 1; }
+    ulong get_last_log_idx() const { return log_store_->next_slot() - 1; }
 
     /**
      * Get the last committed log index number of state machine.
      *
      * @return Last committed log index number of state machine.
      */
-    ulong get_committed_log_idx() const
-    { return sm_commit_index_.load(); }
+    ulong get_committed_log_idx() const { return sm_commit_index_.load(); }
 
     /**
      * Get the target log index number we are required to commit.
      *
      * @return Target committed log index number.
      */
-    ulong get_target_committed_log_idx() const
-    { return quick_commit_index_.load(); }
+    ulong get_target_committed_log_idx() const { return quick_commit_index_.load(); }
 
     /**
      * Get the leader's last committed log index number.
      *
      * @return The leader's last committed log index number.
      */
-    ulong get_leader_committed_log_idx() const
-    { return is_leader() ? get_committed_log_idx() : leader_commit_index_.load(); }
+    ulong get_leader_committed_log_idx() const {
+        return is_leader() ? get_committed_log_idx() : leader_commit_index_.load();
+    }
 
     /**
      * Calculate the log index to be committed
@@ -495,7 +482,7 @@ public:
      * @param srv_id Server ID.
      * @return Auxiliary context.
      */
-    std::string get_aux(int32 srv_id) const ;
+    std::string get_aux(int32 srv_id) const;
 
     /**
      * Get the ID of current leader.
@@ -506,8 +493,7 @@ public:
     int32 get_leader() const {
         // We should handle the case when `role_` is already
         // updated, but `leader_` value is stale.
-        if ( leader_ == id_ &&
-             role_ != srv_role::leader ) return -1;
+        if (leader_ == id_ && role_ != srv_role::leader) return -1;
         return leader_;
     }
 
@@ -517,8 +503,7 @@ public:
      * @return `true` if it is leader.
      */
     bool is_leader() const {
-        if ( leader_ == id_ &&
-             role_ == srv_role::leader ) return true;
+        if (leader_ == id_ && role_ == srv_role::leader) return true;
         return false;
     }
 
@@ -528,7 +513,7 @@ public:
      * @return `true` if live leader exists.
      */
     bool is_leader_alive() const {
-        if ( leader_ == -1 || !hb_alive_ ) return false;
+        if (leader_ == -1 || !hb_alive_) return false;
         return true;
     }
 
@@ -545,7 +530,7 @@ public:
      *
      * @param[out] configs_out Set of server configurations.
      */
-    void get_srv_config_all(std::vector< ptr<srv_config> >& configs_out) const;
+    void get_srv_config_all(std::vector<ptr<srv_config>>& configs_out) const;
 
     /**
      * Peer info structure.
@@ -554,8 +539,7 @@ public:
         peer_info()
             : id_(-1)
             , last_log_idx_(0)
-            , last_succ_resp_us_(0)
-            {}
+            , last_succ_resp_us_(0) {}
 
         /**
          * Peer ID.
@@ -707,8 +691,7 @@ public:
      * @param param Parameters.
      * @return cb_func::ReturnCode.
      */
-    CbReturnCode invoke_callback(cb_func::Type type,
-                                 cb_func::Param* param);
+    CbReturnCode invoke_callback(cb_func::Type type, cb_func::Param* param);
 
     /**
      * Set a custom callback function for increasing term.
@@ -787,8 +770,9 @@ protected:
     struct pre_vote_status_t {
         pre_vote_status_t()
             : quorum_reject_count_(0)
-            , failure_count_(0)
-            { reset(0); }
+            , failure_count_(0) {
+            reset(0);
+        }
         void reset(ulong _term) {
             term_ = _term;
             done_ = false;
@@ -846,13 +830,11 @@ protected:
     ptr<resp_msg> handle_prevote_req(req_msg& req);
     ptr<resp_msg> handle_vote_req(req_msg& req);
     ptr<resp_msg> handle_cli_req_prelock(req_msg& req, const req_ext_params& ext_params);
-    ptr<resp_msg> handle_cli_req(req_msg& req,
-                                 const req_ext_params& ext_params,
-                                 uint64_t timestamp_us);
-    ptr<resp_msg> handle_cli_req_callback(ptr<commit_ret_elem> elem,
-                                          ptr<resp_msg> resp);
-    ptr< cmd_result< ptr<buffer> > >
-        handle_cli_req_callback_async(ptr< cmd_result< ptr<buffer> > > async_res);
+    ptr<resp_msg>
+    handle_cli_req(req_msg& req, const req_ext_params& ext_params, uint64_t timestamp_us);
+    ptr<resp_msg> handle_cli_req_callback(ptr<commit_ret_elem> elem, ptr<resp_msg> resp);
+    ptr<cmd_result<ptr<buffer>>>
+    handle_cli_req_callback_async(ptr<cmd_result<ptr<buffer>>> async_res);
 
     void drop_all_pending_commit_elems();
 
@@ -924,9 +906,7 @@ protected:
     void invite_srv_to_join_cluster();
     void rm_srv_from_cluster(int32 srv_id);
     int get_snapshot_sync_block_size() const;
-    void on_snapshot_completed(ptr<snapshot>& s,
-                               bool result,
-                               ptr<std::exception>& err);
+    void on_snapshot_completed(ptr<snapshot>& s, bool result, ptr<std::exception>& err);
     void on_retryable_req_err(ptr<peer>& p, ptr<req_msg>& req);
     ulong term_for_log(ulong log_idx);
 
@@ -941,13 +921,11 @@ protected:
                         bool need_to_handle_commit_elem);
     void commit_conf(ulong idx_to_commit, ptr<log_entry>& le);
 
-    ptr< cmd_result< ptr<buffer> > >
-        send_msg_to_leader(ptr<req_msg>& req,
-                           const req_ext_params& ext_params = req_ext_params());
+    ptr<cmd_result<ptr<buffer>>>
+    send_msg_to_leader(ptr<req_msg>& req,
+                       const req_ext_params& ext_params = req_ext_params());
 
-    void auto_fwd_release_rpc_cli(ptr<auto_fwd_pkg> cur_pkg,
-                                  ptr<rpc_client> rpc_cli);
-
+    void auto_fwd_release_rpc_cli(ptr<auto_fwd_pkg> cur_pkg, ptr<rpc_client> rpc_cli);
 
     void auto_fwd_resp_handler(ptr<cmd_result<ptr<buffer>>> presult,
                                ptr<auto_fwd_pkg> cur_pkg,
@@ -1491,6 +1469,6 @@ protected:
     std::atomic<bool> test_mode_flag_;
 };
 
-} // namespace nuraft;
+} // namespace nuraft
 
 #endif //_RAFT_SERVER_HXX_
