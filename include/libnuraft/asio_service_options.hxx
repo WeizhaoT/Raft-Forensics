@@ -17,6 +17,7 @@ limitations under the License.
 
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <string>
 #include <system_error>
@@ -27,13 +28,8 @@ namespace nuraft {
  * Parameters for meta callback functions in `options`.
  */
 struct asio_service_meta_cb_params {
-    asio_service_meta_cb_params(int m = 0,
-                                int s = 0,
-                                int d = 0,
-                                uint64_t t = 0,
-                                uint64_t lt = 0,
-                                uint64_t li = 0,
-                                uint64_t ci = 0)
+    asio_service_meta_cb_params(
+        int m = 0, int s = 0, int d = 0, uint64_t t = 0, uint64_t lt = 0, uint64_t li = 0, uint64_t ci = 0)
         : msg_type_(m)
         , src_id_(s)
         , dst_id_(d)
@@ -140,8 +136,7 @@ struct asio_service_options {
      * Callback function for reading and verifying Raft RPC request metadata.
      * If it returns `false`, the request will be discarded.
      */
-    std::function<bool(const asio_service_meta_cb_params&, const std::string&)>
-        read_req_meta_;
+    std::function<bool(const asio_service_meta_cb_params&, const std::string&)> read_req_meta_;
 
     /**
      * If `true`, it will invoke `read_req_meta_` even though
@@ -158,8 +153,7 @@ struct asio_service_options {
      * Callback function for reading and verifying Raft RPC response metadata.
      * If it returns false, the response will be ignored.
      */
-    std::function<bool(const asio_service_meta_cb_params&, const std::string&)>
-        read_resp_meta_;
+    std::function<bool(const asio_service_meta_cb_params&, const std::string&)> read_resp_meta_;
 
     /**
      * If `true`, it will invoke `read_resp_meta_` even though
@@ -180,9 +174,7 @@ struct asio_service_options {
      * If you want to selectively bypass some hosts, just pass the given
      * host and port to the response function as they are.
      */
-    std::function<void(
-        const std::string&, const std::string&, asio_service_custom_resolver_response)>
-        custom_resolver_;
+    std::function<void(const std::string&, const std::string&, asio_service_custom_resolver_response)> custom_resolver_;
 
     /**
      * If `true`, each log entry will contain timestamp when it was generated

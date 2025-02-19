@@ -60,6 +60,10 @@ enum msg_type {
     reconnect_response = 27,
     custom_notification_request = 28,
     custom_notification_response = 29,
+
+    //! FORENSICS: new message types
+    broadcast_leader_certificate_request = 101,
+    broadcast_leader_certificate_response = 102,
 };
 
 static bool ATTR_UNUSED is_valid_msg(msg_type type) {
@@ -130,6 +134,13 @@ static std::string ATTR_UNUSED msg_type_to_string(msg_type type) {
         return "custom_notification_request";
     case custom_notification_response:
         return "custom_notification_response";
+
+    //! FORENSICS: new message types
+    case broadcast_leader_certificate_request:
+        return "broadcast_leader_certificate_request";
+    case broadcast_leader_certificate_response:
+        return "broadcast_leader_certificate_response";
+
     default:
         return "unknown (" + std::to_string(static_cast<int>(type)) + ")";
     }

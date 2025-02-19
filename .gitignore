@@ -1,4 +1,5 @@
 .vscode/
+asio
 build
 debug/
 Debug/

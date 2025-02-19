@@ -20,6 +20,10 @@ limitations under the License.
 
 #include "srv_config.hxx"
 
+//! FORENSICS:
+#include "openssl_ecdsa.hxx"
+#include <iostream>
+
 namespace nuraft {
 
 ptr<srv_config> srv_config::deserialize(buffer& buf) {
@@ -36,20 +40,67 @@ ptr<srv_config> srv_config::deserialize(buffer_serializer& bs) {
     std::string aux((aux_char) ? aux_char : std::string());
     byte is_learner = bs.get_u8();
     int32 priority = bs.get_i32();
+
+    //! FORENSICS: read pubkey
+    size_t keysize = bs.get_i64();
+    ptr<pubkey_intf> pubkey;
+    if (keysize > 0) {
+        ptr<buffer> keybuf = buffer::alloc(keysize);
+        bs.get_buffer(keybuf);
+        pubkey = std::make_shared<pubkey_t>(*keybuf);
+    }
     return cs_new<srv_config>(id, dc_id, endpoint, aux, is_learner, priority);
 }
 
 ptr<buffer> srv_config::serialize() const {
-    ptr<buffer> buf = buffer::alloc(sz_int + sz_int + (endpoint_.length() + 1)
-                                    + (aux_.length() + 1) + 1 + sz_int);
+    //! FORENSICS: BEGIN
+    size_t total_size = sz_int + sz_int + (endpoint_.length() + 1) + (aux_.length() + 1) + 1 + sz_int + sz_ulong;
+    ptr<buffer> keybuf;
+    if (public_key_ != nullptr) {
+        keybuf = public_key_->tobuf();
+        total_size += keybuf->size();
+    }
+    ptr<buffer> buf = buffer::alloc(total_size);
+    //! FORENSICS: END
+
     buf->put(id_);
     buf->put(dc_id_);
     buf->put(endpoint_);
     buf->put(aux_);
     buf->put((byte)(learner_ ? (1) : (0)));
     buf->put(priority_);
+
+    //! FORENSICS: BEGIN
+    if (public_key_ != nullptr) {
+        buf->put((ulong)keybuf->size());
+        buf->put(*keybuf);
+    } else {
+        buf->put((ulong)0);
+    }
+    //! FORENSICS: END
+
     buf->pos(0);
     return buf;
 }
+
+//! FORENSICS: BEGIN
+void srv_config::set_public_key(ptr<pubkey_intf> pubkey) {
+    if (pubkey == nullptr) {
+        // std::cerr << "srv config setting pubkey is null";
+        return;
+    }
+    // std::cerr << "srv config setting pubkey" << pubkey->str();
+    public_key_ = pubkey;
+}
+
+void srv_config::set_private_key(ptr<seckey_intf> priv_key) {
+    if (priv_key == nullptr) {
+        // std::cerr << "srv config setting private key is null";
+        return;
+    }
+    // std::cerr << "srv config setting private key" << priv_key->str();
+    private_key_ = priv_key;
+}
+//! FORENSICS: END
 
 } // namespace nuraft

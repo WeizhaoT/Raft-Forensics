@@ -24,6 +24,7 @@ limitations under the License.
 #include "basic_types.hxx"
 #include "buffer.hxx"
 #include "buffer_serializer.hxx"
+#include "key.hxx"
 #include "pp_util.hxx"
 #include "ptr.hxx"
 
@@ -36,25 +37,36 @@ public:
     // WARNING: Please see the comment at raft_server::raft_server(...).
     const static int32 INIT_PRIORITY = 1;
 
-    srv_config(int32 id, const std::string& endpoint)
+    //! FORENSICS: add pubkey
+    srv_config(int32 id,
+               const std::string& endpoint,
+               ptr<pubkey_intf> pubkey = nullptr,
+               std::string private_key = "")
         : id_(id)
         , dc_id_(0)
         , endpoint_(endpoint)
         , learner_(false)
-        , priority_(INIT_PRIORITY) {}
+        , priority_(INIT_PRIORITY)
+        , public_key_(pubkey)
+        , private_key_string_(private_key) {}
 
+    //! FORENSICS: add pubkey
     srv_config(int32 id,
                int32 dc_id,
                const std::string& endpoint,
                const std::string& aux,
                bool learner,
-               int32 priority = INIT_PRIORITY)
+               int32 priority = INIT_PRIORITY,
+               ptr<pubkey_intf> pubkey = nullptr,
+               std::string private_key = "")
         : id_(id)
         , dc_id_(dc_id)
         , endpoint_(endpoint)
         , aux_(aux)
         , learner_(learner)
-        , priority_(priority) {}
+        , priority_(priority)
+        , public_key_(pubkey)
+        , private_key_string_(private_key) {}
 
     __nocopy__(srv_config);
 
@@ -78,6 +90,18 @@ public:
     void set_priority(const int32 new_val) { priority_ = new_val; }
 
     ptr<buffer> serialize() const;
+
+    //! FORENSICS: BEGIN
+    ptr<pubkey_intf> get_public_key() const { return public_key_; }
+
+    void set_public_key(ptr<pubkey_intf> pubkey);
+
+    ptr<seckey_intf> get_private_key() const { return private_key_; }
+
+    void set_private_key(ptr<seckey_intf> priv_key);
+
+    std::string get_private_key_string() { return private_key_string_; }
+    //! FORENSICS: END
 
 private:
     /**
@@ -114,6 +138,21 @@ private:
      * 0 will never be a leader.
      */
     int32 priority_;
+
+    /**
+     * ! FORENSICS: @brief public key
+     */
+    ptr<pubkey_intf> public_key_;
+
+    /**
+     * ! FORENSICS: @brief private key
+     */
+    ptr<seckey_intf> private_key_;
+
+    /**
+     * ! FORENSICS: @brief precomputed private key string
+     */
+    std::string private_key_string_;
 };
 
 } // namespace nuraft

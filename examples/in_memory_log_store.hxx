@@ -50,8 +50,7 @@ public:
 
     ptr<std::vector<ptr<log_entry>>> log_entries(ulong start, ulong end);
 
-    ptr<std::vector<ptr<log_entry>>>
-    log_entries_ext(ulong start, ulong end, int64 batch_size_hint_in_bytes = 0);
+    ptr<std::vector<ptr<log_entry>>> log_entries_ext(ulong start, ulong end, int64 batch_size_hint_in_bytes = 0);
 
     ptr<log_entry> entry_at(ulong index);
 
@@ -70,6 +69,11 @@ public:
     ulong last_durable_index();
 
     void set_disk_delay(raft_server* raft, size_t delay_ms);
+
+    //! FORENSICS:
+    ulong last_app_log_idx() const;
+
+    ptr<log_entry> last_app_log_entry();
 
 private:
     static ptr<log_entry> make_clone(const ptr<log_entry>& entry);
@@ -95,6 +99,9 @@ private:
      * Backward pointer to Raft server.
      */
     raft_server* raft_server_bwd_pointer_;
+
+    //! FORENSICS:
+    std::atomic<ulong> last_app_log_idx_;
 
     // Testing purpose --------------- BEGIN
 

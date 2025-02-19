@@ -77,7 +77,11 @@ public:
 
     void set_timestamp(uint64_t t) { timestamp_us_ = t; }
 
-    ptr<buffer> serialize() {
+    //! FORENSICS: serialize for signature
+    ptr<buffer> serialize_sig() {
+        if (!buff_) {
+            return nullptr;
+        }
         buff_->pos(0);
         ptr<buffer> buf = buffer::alloc(sizeof(ulong) + sizeof(char) + buff_->size());
         buf->put(term_);
@@ -87,10 +91,26 @@ public:
         return buf;
     }
 
+    //! FORENSICS: serialize prev_pointer and signature
+    ptr<buffer> serialize() {
+        buff_->pos(0);
+        ptr<buffer> buf =
+            buffer::alloc(sizeof(ulong) + sizeof(char) + sizeof(ulong) + buff_->size());
+        buf->put(term_);
+        buf->put((static_cast<byte>(value_type_)));
+        buf->put((ulong)buff_->size());
+        buf->put(*buff_);
+        buf->pos(0);
+        return buf;
+    }
+
+    //! FORENSICS: deserialize prev_pointer and signature
     static ptr<log_entry> deserialize(buffer& buf) {
         ulong term = buf.get_ulong();
         log_val_type t = static_cast<log_val_type>(buf.get_byte());
-        ptr<buffer> data = buffer::copy(buf);
+        ulong data_size = buf.get_ulong();
+        ptr<buffer> data = buffer::alloc(data_size);
+        buf.get(data);
         return cs_new<log_entry>(term, data, t);
     }
 

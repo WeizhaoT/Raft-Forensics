@@ -29,7 +29,9 @@ inmem_log_store::inmem_log_store()
     , disk_emul_delay(0)
     , disk_emul_thread_(nullptr)
     , disk_emul_thread_stop_signal_(false)
-    , disk_emul_last_durable_index_(0) {
+    , disk_emul_last_durable_index_(0)
+    , last_app_log_idx_(0) //! FORENSICS:
+{
     // Dummy entry for index 0.
     ptr<buffer> buf = buffer::alloc(sz_ulong);
     logs_[0] = cs_new<log_entry>(0, buf);
@@ -49,10 +51,8 @@ ptr<log_entry> inmem_log_store::make_clone(const ptr<log_entry>& entry) {
     // NOTE:
     //   Timestamp is used only when `replicate_log_timestamp_` option is on.
     //   Otherwise, log store does not need to store or load it.
-    ptr<log_entry> clone = cs_new<log_entry>(entry->get_term(),
-                                             buffer::clone(entry->get_buf()),
-                                             entry->get_val_type(),
-                                             entry->get_timestamp());
+    ptr<log_entry> clone = cs_new<log_entry>(
+        entry->get_term(), buffer::clone(entry->get_buf()), entry->get_val_type(), entry->get_timestamp());
     return clone;
 }
 
@@ -162,8 +162,7 @@ inmem_log_store::log_entries_ext(ulong start, ulong end, int64 batch_size_hint_i
         }
         ret->push_back(make_clone(src));
         accum_size += src->get_buf().size();
-        if (batch_size_hint_in_bytes && accum_size >= (ulong)batch_size_hint_in_bytes)
-            break;
+        if (batch_size_hint_in_bytes && accum_size >= (ulong)batch_size_hint_in_bytes) break;
     }
     return ret;
 }
@@ -281,8 +280,7 @@ void inmem_log_store::set_disk_delay(raft_server* raft, size_t delay_ms) {
     raft_server_bwd_pointer_ = raft;
 
     if (!disk_emul_thread_) {
-        disk_emul_thread_ = std::unique_ptr<std::thread>(
-            new std::thread(&inmem_log_store::disk_emul_loop, this));
+        disk_emul_thread_ = std::unique_ptr<std::thread>(new std::thread(&inmem_log_store::disk_emul_loop, this));
     }
 }
 
@@ -334,5 +332,10 @@ void inmem_log_store::disk_emul_loop() {
         }
     }
 }
+
+//! FORENSICS:
+ulong inmem_log_store::last_app_log_idx() const { return last_app_log_idx_; };
+
+ptr<log_entry> inmem_log_store::last_app_log_entry() { return entry_at(last_app_log_idx_); }
 
 } // namespace nuraft

@@ -182,6 +182,20 @@ public:
      * @return The last durable log index.
      */
     virtual ulong last_durable_index() { return next_slot() - 1; }
+
+    /**
+     * ! FORENSICS:
+     *
+     * @return
+     */
+    virtual ulong last_app_log_idx() const = 0;
+
+    /**
+     * ! FORENSICS:
+     *
+     * @return
+     */
+    virtual ptr<log_entry> last_app_log_entry() = 0;
 };
 
 } // namespace nuraft

@@ -25,6 +25,7 @@ limitations under the License.
 #include "pp_util.hxx"
 
 #include <algorithm>
+#include <string>
 
 namespace nuraft {
 
@@ -601,6 +602,50 @@ public:
      * before returning the response.
      */
     bool parallel_log_appending_;
+
+    //! FORENSICS: BEGIN
+    /**
+     * ! FORENSICS: @brief If true, turn log list into blockchain
+     *
+     */
+    bool use_chain_ptr_;
+
+    /**
+     * ! FORENSICS: @brief If true, add leader signature to every entry
+     */
+    bool use_leader_sig_;
+
+    /**
+     * ! FORENSICS: @brief If true, use cc's
+     */
+    bool use_commitment_cert_;
+
+    /**
+     * ! FORENSICS: @brief If true, use election list
+     */
+    bool use_election_list_;
+
+    /**
+     * ! FORENSICS: @brief periodically save election list to files
+     */
+    bool save_election_list_;
+
+    /**
+     * ! FORENSICS: @brief forensics output path
+     */
+    std::string forensics_output_path_;
+
+    /**
+     * ! FORENSICS: @brief election list max entries in memory before dumping to file
+     */
+    ulong election_list_max_;
+
+    /**
+     * ! FORENSICS: @brief private key string; if non-existing, create a random one
+     */
+    std::string private_key;
+
+    //! FORENSICS: END
 };
 
 } // namespace nuraft

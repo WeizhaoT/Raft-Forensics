@@ -30,6 +30,11 @@ enum log_val_type {
     log_pack = 4,
     snp_sync_req = 5,
     custom = 999,
+
+    hash_ptr = 11,   //! FORENSICS: for sharing hash pointer
+    leader_sig = 12, //! FORENSICS: for leader signature
+    old_lc = 21,
+    old_cc = 22,
 };
 
 }

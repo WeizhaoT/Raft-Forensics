@@ -698,6 +698,11 @@ void raft_server::reconfigure(const ptr<cluster_config>& new_config) {
                              ptr<logger>&>(srv_added, *ctx_, exec, l_);
         p->set_next_log_idx(log_store_->next_slot());
 
+        //! FORENSICS: print pubkey
+        p_in("adding server %d with pubkey %s",
+             p->get_id(),
+             p->get_public_key_str().c_str());
+
         sprintf(temp_buf,
                 "add peer %d, %s, %s\n",
                 (int)srv_added->get_id(),

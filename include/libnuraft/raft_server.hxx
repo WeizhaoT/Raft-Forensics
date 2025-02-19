@@ -32,6 +32,10 @@ limitations under the License.
 #include "srv_state.hxx"
 #include "timer_task.hxx"
 
+//! FORENSICS:
+#include "certificate.hxx"
+#include "key.hxx"
+
 #include <list>
 #include <map>
 #include <string>
@@ -762,6 +766,22 @@ public:
      */
     ulong get_last_snapshot_idx() const;
 
+    //! FORENSICS: BEGIN
+    ptr<buffer> get_signature(buffer& msg);
+
+    bool flag_use_ptr();
+
+    bool flag_use_leader_sig();
+
+    bool flag_use_cc();
+
+    bool flag_use_election_list();
+
+    bool flag_save_election_list();
+
+    ulong get_election_list_max();
+    //! FORENSICS: END
+
 protected:
     typedef std::unordered_map<int32, ptr<peer>>::const_iterator peer_itor;
 
@@ -959,6 +979,48 @@ protected:
     void request_append_entries_for_all();
 
     uint64_t get_current_leader_index();
+
+    //! FORENSICS: BEGIN
+    bool match_log_entry(std::vector<ptr<log_entry>>& entries,
+                         ulong index,
+                         ptr<buffer> target_hash);
+    // ssize_t check_leader_sig(std::vector<ptr<log_entry>>& entries, int32 signer);
+    bool check_leader_sig(ptr<log_entry> entry, ptr<buffer> sig, int32 signer_id);
+    int32 validate_commitment_certificate(ptr<certificate> cert, ptr<log_entry> entry);
+
+    bool push_new_cert_signature(ptr<buffer> sig, int32 pid, ulong term, ulong index);
+    void dump_commit_cert(srv_role role, ptr<certificate> cert);
+
+    void send_leader_certificate(int32 peer_id, ptr<leader_certificate> tmp_lc);
+    void send_leader_certificate(ptr<peer>& pp, ptr<leader_certificate> tmp_lc);
+
+    void broadcast_leader_certificate();
+
+    void new_leader_certificate();
+
+    bool verify_and_save_leader_certificate(req_msg& req, ptr<buffer> lc_buffer);
+
+    ptr<resp_msg> handle_leader_certificate_request(req_msg& req);
+
+    void handle_leader_certificate_resp(resp_msg& resp);
+
+    bool save_leader_cert(ptr<leader_certificate> lc);
+
+    std::string get_election_list_file_name(const std::string& data_dir);
+    std::string get_leader_sig_file_name(const std::string& data_dir);
+    std::string get_commit_cert_file_name(const std::string& data_dir);
+
+    void
+    dump_leader_signatures(unsigned long long idx, ulong term, ptr<buffer> leader_sig);
+
+    /**
+     * @brief check whether the term has been verified with a valid leader certificate.
+     * Use server_id = -1 to check for arbitary server.
+     */
+    bool term_verified(ulong term, int32 server_id);
+
+    void save_verified_term(ulong term, int32 server_id);
+    //! FORENSICS: END
 
 protected:
     static const int default_snapshot_sync_block_size;
@@ -1467,6 +1529,74 @@ protected:
      * If `true`, test mode is enabled.
      */
     std::atomic<bool> test_mode_flag_;
+
+    //! FORENSICS: BEGIN
+    /**
+     * ! FORENSICS: @brief Private key
+     */
+    ptr<seckey_intf> private_key_;
+
+    /**
+     * ! FORENSICS: @brief Public key
+     */
+    ptr<pubkey_intf> public_key_;
+
+    /**
+     * ! FORENSICS: @brief  finished cc
+     *
+     */
+    ptr<certificate> commit_cert_;
+
+    /**
+     * ! FORENSICS: @brief  all_commit_certs
+     *
+     */
+    std::map<ulong, ptr<certificate>> all_commit_certs_;
+
+    /**
+     * ! FORENSICS: @brief  working cc
+     */
+    std::map<ulong, ptr<certificate>> working_certs_;
+
+    /**
+     * ! FORENSICS: @brief lock for certificates
+     */
+    std::mutex cert_lock_;
+
+    /**
+     * ! FORENSICS: @brief  leader certificate
+     */
+    ptr<leader_certificate> leader_cert_;
+
+    /**
+     * ! FORENSICS: @brief  election list (term, leader_certificate)
+     */
+    std::unordered_map<ulong, ptr<leader_certificate>> election_list_;
+
+    /**
+     * ! FORENSICS: @brief  election list lock
+     */
+    std::mutex election_list_lock_;
+
+    /**
+     * ! FORENSICS: @brief  terms that have been verified with valid leader certificates.
+     * Map of term to server ID.
+     */
+    std::unordered_map<ulong, int32> verified_terms_;
+
+    //! FORENSICS: RN: hash pointer cache (deque of <index, pointer>)
+    std::map<ulong, ptr<buffer>> hash_cache_;
+    std::mutex hash_cache_lock_;
+
+    //! FORENSICS: initial timestamp
+    std::chrono::microseconds::rep init_timestamp_;
+
+    //! FORENSICS: RN: prevent repeated commit cert dumps
+    ulong last_commit_cert_idx_dump_;
+
+    //! FORENSICS: RN: last missing lc term idx
+    ulong last_missing_lc_term_idx_;
+    //! FORENSICS: END
 };
 
 } // namespace nuraft

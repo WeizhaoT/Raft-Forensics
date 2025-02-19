@@ -21,6 +21,7 @@ limitations under the License.
 #ifndef _REG_MSG_HXX_
 #define _REG_MSG_HXX_
 
+#include "certificate.hxx"
 #include "log_entry.hxx"
 #include "msg_base.hxx"
 
@@ -30,6 +31,7 @@ namespace nuraft {
 
 class req_msg : public msg_base {
 public:
+    //! FORENSICS: Include certificate
     req_msg(ulong term,
             msg_type type,
             int32 src,
@@ -41,7 +43,8 @@ public:
         , last_log_term_(last_log_term)
         , last_log_idx_(last_log_idx)
         , commit_idx_(commit_idx)
-        , log_entries_() {}
+        , log_entries_()
+        , cc_() {}
 
     virtual ~req_msg() __override__ {}
 
@@ -55,6 +58,37 @@ public:
     ulong get_commit_idx() const { return commit_idx_; }
 
     std::vector<ptr<log_entry>>& log_entries() { return log_entries_; }
+
+    //! FORENSICS: BEGIN
+    void set_certificate(ptr<certificate> cc) { cc_ = cc; }
+
+    ptr<certificate> get_certificate() { return cc_; }
+
+    ptr<buffer> serialize() {
+        size_t total_size =
+            sizeof(ulong) * 3 + sizeof(ulong) + sizeof(msg_type) + sizeof(int32);
+        ptr<buffer> buf = buffer::alloc(total_size);
+        buf->put(last_log_term_);
+        buf->put(last_log_idx_);
+        buf->put(commit_idx_);
+        buf->put(msg_base::get_term());
+        buf->put(msg_base::get_type());
+        buf->put(msg_base::get_src());
+        buf->pos(0);
+        return buf;
+    }
+
+    static ptr<req_msg> deserialize(buffer& buf) {
+        ulong last_log_term = buf.get_ulong();
+        ulong last_log_idx = buf.get_ulong();
+        ulong commit_idx = buf.get_ulong();
+        ulong term = buf.get_ulong();
+        msg_type type = static_cast<msg_type>(buf.get_byte());
+        int32 src = buf.get_int();
+        return cs_new<req_msg>(
+            term, type, src, 0, last_log_term, last_log_idx, commit_idx);
+    }
+    //! FORENSICS: END
 
 private:
     // Term of last log below.
@@ -72,6 +106,9 @@ private:
 
     // Logs. Can be empty.
     std::vector<ptr<log_entry>> log_entries_;
+
+    //! FORENSICS: certificate
+    ptr<certificate> cc_;
 };
 
 } // namespace nuraft

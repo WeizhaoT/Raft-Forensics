@@ -8,6 +8,8 @@ add_dependencies(raft_server_test
                  static_lib)
 target_link_libraries(raft_server_test
                       ${BUILD_DIR}/${LIBRARY_OUTPUT_NAME})
+# ! Forensics: 
+target_link_libraries(raft_server_test ${LIBRARIES})
 
 # === Failure recovery & conflict resolution test ===
 add_executable(failure_test
@@ -19,6 +21,8 @@ add_dependencies(failure_test
                  static_lib)
 target_link_libraries(failure_test
                       ${BUILD_DIR}/${LIBRARY_OUTPUT_NAME})
+# ! Forensics: 
+target_link_libraries(failure_test ${LIBRARIES})
 
 # === ASIO network stuff test ===
 add_executable(asio_service_test
@@ -58,6 +62,8 @@ add_dependencies(serialization_test
                  static_lib)
 target_link_libraries(serialization_test
                       ${BUILD_DIR}/${LIBRARY_OUTPUT_NAME})
+# ! Forensics: 
+target_link_libraries(serialization_test ${LIBRARIES})
 
 add_executable(timer_test
                unit/timer_test.cxx)

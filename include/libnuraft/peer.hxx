@@ -24,6 +24,8 @@ limitations under the License.
 #include "context.hxx"
 #include "delayed_task_scheduler.hxx"
 #include "internal_timer.hxx"
+//! FORENSICS:
+#include "key.hxx"
 #include "rpc_cli_factory.hxx"
 #include "snapshot_sync_ctx.hxx"
 #include "srv_config.hxx"
@@ -77,6 +79,11 @@ public:
         reset_ls_timer();
         reset_resp_timer();
         reset_active_timer();
+
+        //! FORENSICS: set public key if configured
+        if (config != nullptr) {
+            set_public_key(config->get_public_key());
+        }
     }
 
     __nocopy__(peer);
@@ -255,6 +262,14 @@ public:
 
     ptr<req_msg> get_rsv_msg() const { return rsv_msg_; }
     rpc_handler get_rsv_msg_handler() const { return rsv_msg_handler_; }
+
+    //! FORENSICS: BEGIN
+    void set_public_key(ptr<pubkey_intf> pubkey);
+    std::string get_public_key_str();
+    bool verify_signature(ptr<buffer> msg, ptr<buffer> sig);
+    void set_lc_needed(ulong idx) { lc_needed_ = idx; }
+    ulong get_lc_needed() const { return lc_needed_; }
+    //! FORENSICS: END
 
 private:
     void handle_rpc_result(ptr<peer> myself,
@@ -466,6 +481,16 @@ private:
      * Logger instance.
      */
     ptr<logger> l_;
+
+    /**
+     * ! FORENSICS: Public key
+     */
+    ptr<pubkey_intf> public_key;
+
+    /**
+     * ! FORENSICS:
+     */
+    ulong lc_needed_;
 };
 
 } // namespace nuraft

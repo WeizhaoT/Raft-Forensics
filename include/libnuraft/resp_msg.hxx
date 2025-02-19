@@ -23,6 +23,7 @@ limitations under the License.
 
 #include "async.hxx"
 #include "buffer.hxx"
+#include "msg_base.hxx"
 
 namespace nuraft {
 
@@ -39,7 +40,8 @@ public:
              int32 src,
              int32 dst,
              ulong next_idx = 0L,
-             bool accepted = false)
+             bool accepted = false,
+             ulong lc_needed = std::numeric_limits<ulong>::max())
         : msg_base(term, type, src, dst)
         , next_idx_(next_idx)
         , next_batch_size_hint_in_bytes_(0)
@@ -47,20 +49,19 @@ public:
         , ctx_(nullptr)
         , cb_func_(nullptr)
         , async_cb_func_(nullptr)
-        , result_code_(cmd_result_code::OK) {}
+        , result_code_(cmd_result_code::OK)
+        , sigid_(0)
+        , signature_(nullptr)
+        , lc_needed_(lc_needed) {}
 
     __nocopy__(resp_msg);
 
 public:
     ulong get_next_idx() const { return next_idx_; }
 
-    int64 get_next_batch_size_hint_in_bytes() const {
-        return next_batch_size_hint_in_bytes_;
-    }
+    int64 get_next_batch_size_hint_in_bytes() const { return next_batch_size_hint_in_bytes_; }
 
-    void set_next_batch_size_hint_in_bytes(int64 bytes) {
-        next_batch_size_hint_in_bytes_ = bytes;
-    }
+    void set_next_batch_size_hint_in_bytes(int64 bytes) { next_batch_size_hint_in_bytes_ = bytes; }
 
     bool get_accepted() const { return accepted_; }
 
@@ -99,6 +100,21 @@ public:
 
     cmd_result_code get_result_code() const { return result_code_; }
 
+    //! FORENSICS: BEGIN
+    ulong get_lc_needed() const { return lc_needed_; }
+
+    void need_lc(ulong term) { lc_needed_ = term; }
+
+    void set_signature(ptr<buffer> src, ulong idx) {
+        signature_ = src;
+        sigid_ = idx;
+    }
+
+    ptr<buffer> get_signature() const { return signature_; }
+
+    ulong get_sig_index() const { return sigid_; }
+    //! FORENSICS: END
+
 private:
     ulong next_idx_;
     int64 next_batch_size_hint_in_bytes_;
@@ -108,6 +124,12 @@ private:
     resp_cb cb_func_;
     resp_async_cb async_cb_func_;
     cmd_result_code result_code_;
+
+    //! FORENSICS: BEGIN
+    ulong sigid_;
+    ptr<buffer> signature_;
+    ulong lc_needed_;
+    //! FORENSICS: END
 };
 
 } // namespace nuraft

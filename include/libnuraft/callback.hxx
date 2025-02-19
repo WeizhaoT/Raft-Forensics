@@ -18,6 +18,7 @@ limitations under the License.
 #ifndef _CALLBACK_H_
 #define _CALLBACK_H_
 
+#include <cstdint>
 #include <functional>
 #include <string>
 
@@ -159,10 +160,7 @@ public:
     };
 
     struct Param {
-        Param(int32_t my_id = -1,
-              int32_t leader_id = -1,
-              int32_t peer_id = -1,
-              void* _ctx = nullptr)
+        Param(int32_t my_id = -1, int32_t leader_id = -1, int32_t peer_id = -1, void* _ctx = nullptr)
             : myId(my_id)
             , leaderId(leader_id)
             , peerId(peer_id)

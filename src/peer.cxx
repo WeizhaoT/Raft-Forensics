@@ -27,6 +27,36 @@ limitations under the License.
 
 namespace nuraft {
 
+/**
+ * ! FORENSICS:
+ * @brief Set the public key
+ *
+ * @param pubkey public key
+ */
+void peer::set_public_key(ptr<pubkey_intf> pubkey) {
+    if (pubkey == nullptr) {
+        p_in("Peer pubkey is null");
+        return;
+    }
+    // p_in("Peer pubkey - %s", pubkey->str().c_str());
+    public_key = pubkey;
+}
+
+//! FORENSICS: print readable public key
+std::string peer::get_public_key_str() {
+    if (public_key == nullptr) return std::string("null");
+    return public_key->str();
+}
+
+//! FORENSICS: verify sig
+bool peer::verify_signature(ptr<buffer> msg, ptr<buffer> sig) {
+    if (msg == nullptr || sig == nullptr) {
+        // p_in("server %d, verify signature msg or sig is null", config_->get_id());
+        return false;
+    }
+    return public_key->verify_md(*msg, *sig);
+}
+
 void peer::send_req(ptr<peer> myself, ptr<req_msg>& req, rpc_handler& handler) {
     if (abandoned_) {
         p_er("peer %d has been shut down, cannot send request", config_->get_id());
@@ -34,10 +64,7 @@ void peer::send_req(ptr<peer> myself, ptr<req_msg>& req, rpc_handler& handler) {
     }
 
     if (req) {
-        p_tr("send req %d -> %d, type %s",
-             req->get_src(),
-             req->get_dst(),
-             msg_type_to_string(req->get_type()).c_str());
+        p_tr("send req %d -> %d, type %s", req->get_src(), req->get_dst(), msg_type_to_string(req->get_type()).c_str());
     }
 
     ptr<rpc_result> pending = cs_new<rpc_result>(handler);
@@ -53,14 +80,8 @@ void peer::send_req(ptr<peer> myself, ptr<req_msg>& req, rpc_handler& handler) {
         }
         rpc_local = rpc_;
     }
-    rpc_handler h = (rpc_handler)std::bind(&peer::handle_rpc_result,
-                                           this,
-                                           myself,
-                                           rpc_local,
-                                           req,
-                                           pending,
-                                           std::placeholders::_1,
-                                           std::placeholders::_2);
+    rpc_handler h = (rpc_handler)std::bind(
+        &peer::handle_rpc_result, this, myself, rpc_local, req, pending, std::placeholders::_1, std::placeholders::_2);
     if (rpc_local) {
         rpc_local->send(req, h);
     }
@@ -200,8 +221,7 @@ bool peer::recreate_rpc(ptr<srv_config>& config, context& ctx) {
     std::lock_guard<std::mutex> l(rpc_protector_);
 
     bool backoff_timer_disabled =
-        debugging_options::get_instance().disable_reconn_backoff_.load(
-            std::memory_order_relaxed);
+        debugging_options::get_instance().disable_reconn_backoff_.load(std::memory_order_relaxed);
     if (backoff_timer_disabled) {
         p_tr("reconnection back-off timer is disabled");
     }
