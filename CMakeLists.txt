@@ -2,6 +2,10 @@ cmake_minimum_required(VERSION 3.5)
 project(NuRaft VERSION 1.0.0 LANGUAGES CXX)
 find_package(OpenSSL REQUIRED)
 
+# # ! Forensics: Install your own OpenSSL library and set the path here
+# set (OPENSSL_LIBRARY_PATH "/usr/lib/x86_64-linux-gnu")
+# set (OPENSSL_INCLUDE_PATH "/usr/include/openssl")
+
 # === Build type (default: RelWithDebInfo, O2) ===========
 if (NOT CMAKE_BUILD_TYPE)
     set(DEFAULT_BUILD_TYPE "RelWithDebInfo")
@@ -28,8 +32,7 @@ endif()
 
 # === Find ASIO ===
 if (BOOST_INCLUDE_PATH AND BOOST_LIBRARY_PATH)
-    # If Boost path (both include and library) is given,
-    # use Boost's ASIO.
+    # If Boost path (both include and library) is given, use Boost's ASIO.
     message(STATUS "Boost include path: " ${BOOST_INCLUDE_PATH})
     message(STATUS "Boost library path: " ${BOOST_LIBRARY_PATH})
 
@@ -37,7 +40,6 @@ if (BOOST_INCLUDE_PATH AND BOOST_LIBRARY_PATH)
 
     set(ASIO_INCLUDE_DIR ${BOOST_INCLUDE_PATH})
     set(LIBBOOST_SYSTEM "${BOOST_LIBRARY_PATH}/libboost_system.a")
-
 else ()
     # If not, ASIO standalone mode.
     FIND_PATH(ASIO_INCLUDE_DIR
@@ -49,7 +51,6 @@ else ()
                     /usr/include)
 
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DASIO_STANDALONE")
-
 endif ()
 
 if (NOT ASIO_INCLUDE_DIR)
@@ -58,13 +59,9 @@ else ()
     message(STATUS "ASIO include path: " ${ASIO_INCLUDE_DIR})
 endif ()
 
-set (OPENSSL_LIBRARY_PATH "/usr/lib/x86_64-linux-gnu")
-set (OPENSSL_INCLUDE_PATH "/usr/include/openssl")
-
 # === Includes ===
 include_directories(BEFORE ./)
 include_directories(BEFORE ${ASIO_INCLUDE_DIR})
-include_directories(${OPENSSL_INCLUDE_PATH})
 include_directories(BEFORE ${PROJECT_SOURCE_DIR}/include)
 include_directories(BEFORE ${PROJECT_SOURCE_DIR}/include/libnuraft)
 include_directories(BEFORE ${PROJECT_SOURCE_DIR}/examples)
@@ -267,11 +264,9 @@ set(LIBRARY_NAME "nuraft")
 
 add_library(static_lib ${STATIC_LIB_SRC})
 set_target_properties(static_lib PROPERTIES OUTPUT_NAME ${LIBRARY_NAME} CLEAN_DIRECT_OUTPUT 1)
-target_link_libraries(static_lib ${LIBRARIES})
 
 add_library(shared_lib SHARED ${STATIC_LIB_SRC})
 set_target_properties(shared_lib PROPERTIES OUTPUT_NAME ${LIBRARY_NAME} CLEAN_DIRECT_OUTPUT 1)
-target_link_libraries(shared_lib ${LIBRARIES})
 
 if (APPLE)
     target_link_libraries(shared_lib ${LIBRARIES})
@@ -310,7 +305,6 @@ if (CODE_COVERAGE GREATER 0)
         EXECUTABLE ./runtests.sh
         DEPENDENCIES ${CODE_COVERAGE_DEPS}
     )
-    target_link_libraries(raft_cov ${LIBSSL} ${LIBCRYPTO})
 endif()
 
 
