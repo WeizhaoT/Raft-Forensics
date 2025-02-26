@@ -26,12 +26,11 @@ namespace nuraft {
 inmem_log_store::inmem_log_store()
     : start_idx_(1)
     , raft_server_bwd_pointer_(nullptr)
+    , last_app_log_idx_(0) //! FORENSICS:
     , disk_emul_delay(0)
     , disk_emul_thread_(nullptr)
     , disk_emul_thread_stop_signal_(false)
-    , disk_emul_last_durable_index_(0)
-    , last_app_log_idx_(0) //! FORENSICS:
-{
+    , disk_emul_last_durable_index_(0) {
     // Dummy entry for index 0.
     ptr<buffer> buf = buffer::alloc(sz_ulong);
     logs_[0] = cs_new<log_entry>(0, buf);

@@ -77,8 +77,7 @@ ptr<resp_msg> raft_server::handle_add_srv_req(req_msg& req) {
 
         // Check the last active time of that server.
         ulong last_active_ms = srv_to_join_->get_active_timer_us() / 1000;
-        p_wn("previous adding server (%d) is in progress, "
-             "last activity: %zu ms ago",
+        p_wn("previous adding server (%d) is in progress, last activity: %zu ms ago",
              srv_to_join_->get_id(),
              last_active_ms);
 
@@ -95,14 +94,18 @@ ptr<resp_msg> raft_server::handle_add_srv_req(req_msg& req) {
     conf_to_add_ = std::move(srv_conf);
     timer_task<int32>::executor exec =
         (timer_task<int32>::executor)std::bind(&raft_server::handle_hb_timeout, this, std::placeholders::_1);
+    p_tr("Peer init");
     srv_to_join_ = cs_new<peer, ptr<srv_config>&, context&, timer_task<int32>::executor&, ptr<logger>&>(
         conf_to_add_, *ctx_, exec, l_);
+    p_tr("Peer init finished");
     invite_srv_to_join_cluster();
     resp->accept(log_store_->next_slot());
+    p_tr("Join accept");
     return resp;
 }
 
 void raft_server::invite_srv_to_join_cluster() {
+    p_tr("init invite request");
     ptr<req_msg> req = cs_new<req_msg>(state_->get_term(),
                                        msg_type::join_cluster_request,
                                        id_,
@@ -112,12 +115,19 @@ void raft_server::invite_srv_to_join_cluster() {
                                        quick_commit_index_.load());
 
     ptr<cluster_config> c_conf = get_config();
-    req->log_entries().push_back(cs_new<log_entry>(state_->get_term(), c_conf->serialize(), log_val_type::conf));
+    ulong term = state_->get_term();
+    p_tr("got term");
+    ptr<buffer> new_conf_buf(c_conf->serialize());
+    p_tr("serialized config");
+    req->log_entries().push_back(cs_new<log_entry>(term, new_conf_buf, log_val_type::conf));
+    // req->log_entries().push_back(cs_new<log_entry>(state_->get_term(), c_conf->serialize(), log_val_type::conf));
 
+    p_tr("clone leader cert");
     //! FORENSICS: push leader certificate to the log entry
     ptr<leader_certificate> tmp_lc = leader_cert_->clone();
     req->log_entries().push_back(cs_new<log_entry>(0, tmp_lc->serialize(), log_val_type::custom));
 
+    p_tr("sending join request to peer");
     srv_to_join_->send_req(srv_to_join_, req, ex_resp_handler_);
     p_in("sent join request to peer %d, %s", srv_to_join_->get_id(), srv_to_join_->get_endpoint().c_str());
 }
@@ -210,7 +220,6 @@ void raft_server::handle_join_cluster_resp(resp_msg& resp) {
 
             // p_in("setting pubkey of server %d", srv_to_join_->get_id());
             srv_to_join_->set_public_key(pubkey);
-            // p_in("setting pubkey of server %d", conf_to_add_->get_id());
             conf_to_add_->set_public_key(pubkey);
             //! FORENSICS: END
 

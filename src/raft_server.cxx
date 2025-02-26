@@ -453,7 +453,6 @@ void raft_server::apply_and_log_current_params() {
     try {
         private_key_ = cs_new<seckey_t>(params->private_key.c_str());
     } catch (crypto_exception& e) {
-        p_er("CRYPTO EXCEPTION");
         p_er("cannot load private key, exception (%s)", e.what());
         p_tr("Creating new private key if it doesn't exist");
         if (!private_key_) {
@@ -461,17 +460,16 @@ void raft_server::apply_and_log_current_params() {
             private_key_ = cs_new<seckey_t>();
             try {
                 private_key_->tofile(params->private_key);
+                p_in("exported private key to %s", params->private_key.c_str());
             } catch (crypto_exception& e) {
                 p_wn("cannot save private key to %s (%s)", params->private_key.c_str(), e.what());
             }
         }
         p_tr("Finished creating new private key");
     }
-    p_tr("public key derive 1");
     public_key_ = private_key_->derive();
-    p_tr("public key derive 2");
     config_->get_server(get_id())->set_public_key(public_key_);
-    p_tr("public key derive 3");
+    p_in("Self public key %s", public_key_->str().c_str());
 }
 
 raft_params raft_server::get_current_params() const { return *ctx_->get_params(); }

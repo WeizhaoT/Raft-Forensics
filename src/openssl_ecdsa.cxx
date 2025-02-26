@@ -16,8 +16,7 @@ namespace nuraft {
 EVP_PKEY_CTX* new_evp_pkey_ctx() {
     EVP_PKEY_CTX* kctx = NULL;
 
-    if (!(kctx = EVP_PKEY_CTX_new_id(EVP_PKEY_EC, NULL))
-        || EVP_PKEY_keygen_init(kctx) <= 0
+    if (!(kctx = EVP_PKEY_CTX_new_id(EVP_PKEY_EC, NULL)) || EVP_PKEY_keygen_init(kctx) <= 0
         || EVP_PKEY_CTX_set_ec_paramgen_curve_nid(kctx, CURVE_NID) <= 0) {
         throw crypto_exception("new EVP_PKEY_CTX");
     }
@@ -93,12 +92,13 @@ std::string pubkey_t::str() {
     int csize = BASE64_ENC_SIZE(dsize);
 
     unsigned char* data = new unsigned char[dsize];
-    char* encoded = new char[csize];
+    char* encoded = new char[csize + 1];
 
     dsize = i2d_PublicKey(key, &data);
     data -= dsize;
 
     csize = EVP_EncodeBlock((unsigned char*)encoded, (const unsigned char*)data, dsize);
+    encoded[csize] = '\0';
     auto encstr = std::string(encoded, csize);
 
     delete[] data;
@@ -108,8 +108,7 @@ std::string pubkey_t::str() {
 
 bool pubkey_t::verify_md(const buffer& msg, const buffer& sig) {
     EVP_MD_CTX* mdctx = NULL;
-    if (!(mdctx = EVP_MD_CTX_create())
-        || 1 != EVP_DigestVerifyInit(mdctx, NULL, HASH_FN(), NULL, key)
+    if (!(mdctx = EVP_MD_CTX_create()) || 1 != EVP_DigestVerifyInit(mdctx, NULL, HASH_FN(), NULL, key)
         || 1 != EVP_DigestVerifyUpdate(mdctx, (const void*)msg.data(), msg.size())) {
         throw crypto_exception("verify_md");
     }
@@ -119,9 +118,7 @@ bool pubkey_t::verify_md(const buffer& msg, const buffer& sig) {
     return (1 == res);
 }
 
-ptr<pubkey_t> pubkey_t::frombuf(const buffer& keybuf) {
-    return std::make_shared<pubkey_t>(keybuf);
-}
+ptr<pubkey_t> pubkey_t::frombuf(const buffer& keybuf) { return std::make_shared<pubkey_t>(keybuf); }
 
 // ==============================================================================================================
 // =================================================== SECKEY
@@ -180,6 +177,7 @@ seckey_t::seckey_t(std::string priv_key) {
     }
     key = PEM_read_bio_PrivateKey(bio, NULL, NULL, NULL);
     if (key == NULL) {
+        BIO_free(bio);
         bio = BIO_new_file(priv_key.c_str(), "r");
         if (bio == NULL || PEM_read_bio_PrivateKey(bio, &key, NULL, NULL) == NULL) {
             throw crypto_exception("seckey from string or file");
@@ -245,8 +243,7 @@ ptr<buffer> seckey_t::sign_md(const buffer& msg) {
     EVP_MD_CTX* mdctx = NULL;
     size_t slen;
 
-    if (!(mdctx = EVP_MD_CTX_create())
-        || 1 != EVP_DigestSignInit(mdctx, NULL, HASH_FN(), NULL, key)
+    if (!(mdctx = EVP_MD_CTX_create()) || 1 != EVP_DigestSignInit(mdctx, NULL, HASH_FN(), NULL, key)
         || 1 != EVP_DigestSignUpdate(mdctx, (const void*)msg.data(), msg.size())
         || 1 != EVP_DigestSignFinal(mdctx, NULL, &slen)) {
         throw crypto_exception("sign_md");
@@ -270,13 +267,9 @@ ptr<buffer> seckey_t::sign_md(const buffer& msg) {
 
 ptr<seckey_t> seckey_t::generate() { return std::make_shared<seckey_t>(); }
 
-ptr<seckey_t> seckey_t::frombuf(const buffer& keybuf) {
-    return std::make_shared<seckey_t>(keybuf);
-}
+ptr<seckey_t> seckey_t::frombuf(const buffer& keybuf) { return std::make_shared<seckey_t>(keybuf); }
 
-ptr<seckey_t> seckey_t::fromfile(const std::string& filename) {
-    return std::make_shared<seckey_t>(filename);
-}
+ptr<seckey_t> seckey_t::fromfile(const std::string& filename) { return std::make_shared<seckey_t>(filename); }
 
 // ==============================================================================================================
 // =================================================== UTILS
@@ -285,8 +278,7 @@ ptr<seckey_t> seckey_t::fromfile(const std::string& filename) {
 
 std::string tobase64(const buffer& buf) {
     char* encoded = new char[BASE64_ENC_SIZE(buf.size())];
-    int size = EVP_EncodeBlock(
-        (unsigned char*)encoded, (const unsigned char*)buf.data(), buf.size());
+    int size = EVP_EncodeBlock((unsigned char*)encoded, (const unsigned char*)buf.data(), buf.size());
     auto encstr = std::string(encoded, size);
     delete[] encoded;
     return encstr;

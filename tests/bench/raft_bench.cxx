@@ -17,9 +17,9 @@ limitations under the License.
 
 #include "raft_functional_common.hxx"
 
-#include "nuraft.hxx"
-
 #include "latency_collector.h"
+#include "nuraft.hxx"
+#include "sysutil.hxx"
 #include "test_common.h"
 
 using namespace nuraft;
@@ -27,7 +27,9 @@ using namespace raft_functional_common;
 
 namespace raft_bench {
 
+std::string global_workdir;
 LatencyCollector global_lat;
+size_t global_sid;
 
 using raft_result = cmd_result<ptr<buffer>>;
 
@@ -49,18 +51,13 @@ public:
 
     void rollback(const ulong log_idx, buffer& data) {}
     void save_snapshot_data(snapshot& s, const ulong offset, buffer& data) {}
-    void save_logical_snp_obj(
-        snapshot& s, ulong& obj_id, buffer& data, bool is_first_obj, bool is_last_obj) {
+    void save_logical_snp_obj(snapshot& s, ulong& obj_id, buffer& data, bool is_first_obj, bool is_last_obj) {
         obj_id++;
     }
     bool apply_snapshot(snapshot& s) { return true; }
     int read_snapshot_data(snapshot& s, const ulong offset, buffer& data) { return 0; }
 
-    int read_logical_snp_obj(snapshot& s,
-                             void*& user_snp_ctx,
-                             ulong obj_id,
-                             ptr<buffer>& data_out,
-                             bool& is_last_obj) {
+    int read_logical_snp_obj(snapshot& s, void*& user_snp_ctx, ulong obj_id, ptr<buffer>& data_out, bool& is_last_obj) {
         is_last_obj = true;
         data_out = buffer::alloc(sizeof(ulong));
         data_out->put(obj_id);
@@ -99,23 +96,35 @@ struct bench_config {
     bench_config(size_t _srv_id = 1,
                  const std::string& _my_endpoint = "tcp://localhost:25000",
                  size_t _duration = 30,
+                 int _complexity = 3,
+                 int _log_level = 6,
+                 int _parallel = 1,
                  size_t _iops = 5,
                  size_t _num_threads = 1,
-                 size_t _payload_size = 128)
+                 size_t _payload_size = 128,
+                 std::string _workdir = "")
         : srv_id_(_srv_id)
         , my_endpoint_(_my_endpoint)
         , duration_(_duration)
+        , complexity_(_complexity)
+        , log_level_(_log_level)
+        , parallel_(_parallel)
         , iops_(_iops)
         , num_threads_(_num_threads)
-        , payload_size_(_payload_size) {}
+        , payload_size_(_payload_size)
+        , workdir(_workdir) {}
 
     size_t srv_id_;
     std::string my_endpoint_;
     size_t duration_;
+    int complexity_;
+    int log_level_;
+    int parallel_;
     size_t iops_;
     size_t num_threads_;
     size_t payload_size_;
     std::vector<std::string> endpoints_;
+    std::string workdir;
 };
 
 struct server_stuff {
@@ -150,10 +159,13 @@ struct server_stuff {
     ptr<raft_server> raft_instance_;
 };
 
-int init_raft(server_stuff& stuff) {
+int init_raft(server_stuff& stuff, int complexity, int log_level) {
     // Create logger for this server.
-    std::string log_file_name = "./srv" + std::to_string(stuff.server_id_) + ".log";
-    stuff.log_wrap_ = cs_new<logger_wrapper>(log_file_name, 4);
+    std::string log_file_name = global_workdir + "/srv" + std::to_string(stuff.server_id_) + ".log";
+    //! FORENSICS:
+    stuff.log_wrap_ = cs_new<logger_wrapper>(log_file_name, log_level);
+    stuff.log_wrap_->getLogger()->setCrashDumpPath(global_workdir + "/dump/" + std::to_string(stuff.server_id_), true);
+
     stuff.raft_logger_ = stuff.log_wrap_;
 
     // Create state manager and state machine.
@@ -165,8 +177,7 @@ int init_raft(server_stuff& stuff) {
     asio_opt.thread_pool_size_ = 32;
     stuff.asio_svc_ = cs_new<asio_service>(asio_opt, stuff.raft_logger_);
 
-    stuff.asio_listener_ =
-        stuff.asio_svc_->create_rpc_listener(stuff.port_, stuff.raft_logger_);
+    stuff.asio_listener_ = stuff.asio_svc_->create_rpc_listener(stuff.port_, stuff.raft_logger_);
     ptr<delayed_task_scheduler> scheduler = stuff.asio_svc_;
     ptr<rpc_client_factory> rpc_cli_factory = stuff.asio_svc_;
 
@@ -179,13 +190,20 @@ int init_raft(server_stuff& stuff) {
     params.snapshot_distance_ = 100000;
     params.client_req_timeout_ = 4000;
     params.return_method_ = raft_params::blocking;
-    context* ctx = new context(stuff.smgr_,
-                               stuff.sm_,
-                               stuff.asio_listener_,
-                               stuff.raft_logger_,
-                               rpc_cli_factory,
-                               scheduler,
-                               params);
+    params.private_key = std::string("/data/prv") + std::to_string(stuff.server_id_) + ".key";
+
+    if (complexity < 3) {
+        params.use_commitment_cert_ = false;
+    }
+    if (complexity < 2) {
+        params.use_leader_sig_ = false;
+    }
+    if (complexity < 1) {
+        params.use_chain_ptr_ = false;
+    }
+
+    context* ctx = new context(
+        stuff.smgr_, stuff.sm_, stuff.asio_listener_, stuff.raft_logger_, rpc_cli_factory, scheduler, params);
     stuff.raft_instance_ = cs_new<raft_server>(ctx);
 
     // Listen.
@@ -213,8 +231,7 @@ int add_servers(server_stuff& stuff, const bench_config& config) {
         int server_id_to_add = ii + 2;
         _msg("add server %d ", server_id_to_add);
 
-        srv_config srv_conf_to_add(
-            server_id_to_add, 1, config.endpoints_[ii], std::string(), false, 50);
+        srv_config srv_conf_to_add(server_id_to_add, 1, config.endpoints_[ii], std::string(), false, 50);
         ptr<raft_result> ret = stuff.raft_instance_->add_srv(srv_conf_to_add);
         if (!ret->get_accepted()) {
             _msg(" .. failed");
@@ -307,17 +324,30 @@ void print_config(const bench_config& config) {
 }
 
 void write_latency_distribution() {
-    std::string filename = "raft_latency_" + TestSuite::getTimeStringPlain() + ".log";
+    std::string filename = global_workdir + "/raft_latency_" + TestSuite::getTimeStringPlain() + ".log";
+    std::ofstream fs;
+    fs.open(filename);
+    if (fs.good()) {
+        for (size_t ii = 0; ii <= 99; ++ii) {
+            fs << ii << "\t" << global_lat.getPercentile("rep", ii) << std::endl;
+        }
+        fs << 99.9 << "\t" << global_lat.getPercentile("rep", 99.9) << std::endl;
+        fs << 99.99 << "\t" << global_lat.getPercentile("rep", 99.99) << std::endl;
+        fs << 99.999 << "\t" << global_lat.getPercentile("rep", 99.999) << std::endl;
+        fs.close();
+    }
+}
+
+void write_iops(uint64_t total_ops, uint64_t total_us) {
+    std::string filename = global_workdir + "/iops_" + std::to_string(global_sid) + ".json";
     std::ofstream fs;
     fs.open(filename);
     if (!fs.good()) return;
-
-    for (size_t ii = 0; ii <= 99; ++ii) {
-        fs << ii << "\t" << global_lat.getPercentile("rep", ii) << std::endl;
-    }
-    fs << 99.9 << "\t" << global_lat.getPercentile("rep", 99.9) << std::endl;
-    fs << 99.99 << "\t" << global_lat.getPercentile("rep", 99.99) << std::endl;
-    fs << 99.999 << "\t" << global_lat.getPercentile("rep", 99.999) << std::endl;
+    fs << "{\n";
+    fs << "    \"ops\": " << total_ops << ",\n";
+    fs << "    \"us\": " << total_us << ",\n";
+    fs << "    \"iops\": " << total_ops * 1000000.0 / total_us << "\n";
+    fs << "}\n";
     fs.close();
 }
 
@@ -339,7 +369,8 @@ int bench_main(const bench_config& config) {
 
     print_config(config);
 
-    CHK_Z(init_raft(stuff));
+    //! FORENSICS: add complexity
+    CHK_Z(init_raft(stuff, config.complexity_, config.log_level_));
     _msg("-----\n");
 
     if (stuff.server_id_ > 1) {
@@ -363,6 +394,8 @@ int bench_main(const bench_config& config) {
     std::vector<size_t> col_width(3, 15);
     dd.setWidth(col_width);
     TestSuite::Timer duration_timer(config.duration_ * 1000);
+
+    uint64_t final_us = 1, final_ops = 0;
     while (!duration_timer.timeout()) {
         TestSuite::sleep_ms(80);
         uint64_t cur_us = duration_timer.getTimeUs();
@@ -370,6 +403,8 @@ int bench_main(const bench_config& config) {
 
         uint64_t cur_ops = param.num_ops_done_;
 
+        final_ops = cur_ops;
+        final_us = cur_us;
         dd.set(0, 0, "%zu/%zu", cur_us / 1000000, config.duration_);
         dd.set(0, 1, "%zu", cur_ops);
         dd.set(0, 2, "%s ops/s", TestSuite::throughputStr(cur_ops, cur_us).c_str());
@@ -383,21 +418,18 @@ int bench_main(const bench_config& config) {
     }
 
     _msg("-----\n");
-    TestSuite::_msg(
-        "%15s%10s%10s%10s%10s%10s\n", "OP", "p50", "p95", "p99", "p99.9", "p99.99");
+    TestSuite::_msg("%15s%10s%10s%10s%10s%10s\n", "OP", "p50", "p95", "p99", "p99.9", "p99.99");
 
-    TestSuite::_msg(
-        "%15s%10s%10s%10s%10s%10s\n",
-        "replication",
-        TestSuite::usToString(global_lat.getPercentile("rep", 50)).c_str(),
-        TestSuite::usToString(global_lat.getPercentile("rep", 95)).c_str(),
-        TestSuite::usToString(global_lat.getPercentile("rep", 99)).c_str(),
-        TestSuite::usToString(global_lat.getPercentile("rep", 99.9)).c_str(),
-        TestSuite::usToString(global_lat.getPercentile("rep", 99.99)).c_str());
+    TestSuite::_msg("%15s%10s%10s%10s%10s%10s\n",
+                    "replication",
+                    TestSuite::usToString(global_lat.getPercentile("rep", 50)).c_str(),
+                    TestSuite::usToString(global_lat.getPercentile("rep", 95)).c_str(),
+                    TestSuite::usToString(global_lat.getPercentile("rep", 99)).c_str(),
+                    TestSuite::usToString(global_lat.getPercentile("rep", 99.9)).c_str(),
+                    TestSuite::usToString(global_lat.getPercentile("rep", 99.99)).c_str());
     _msg("-----\n");
-
+    write_iops(final_ops, final_us);
     write_latency_distribution();
-
     return 0;
 }
 
@@ -406,11 +438,11 @@ void usage(int argc, char** argv) {
     ss << "Usage: \n"
        << "    - Leader:\n"
        << "    raft_bench 1 <address:port>\n"
-          "               <duration> <IOPS> <# threads> <payload size>\n"
+          "               <duration> <complexity> <workdir> <IOPS> <# threads> <payload size>\n"
           "               <server 2 addr:port> <server 3 addr:port> ...\n"
        << std::endl
        << "    - Follower:\n"
-       << "    raft_bench <server ID> <address:port>\n"
+       << "    raft_bench <server ID> <address:port> <duration> <complexity> <workdir>\n"
        << std::endl;
 
     std::cout << ss.str();
@@ -418,57 +450,95 @@ void usage(int argc, char** argv) {
 }
 
 bench_config parse_config(int argc, char** argv) {
-    // 0      1           2          3
-    // <exec> <server ID> <endpoint> <duration>
-    // 4      5             6              7         8
+    // 0      1           2          3          4               5
+    // <exec> <server ID> <endpoint> <duration> <complexity>    <workdir>
+    // 6      7             8              9         10
     // <IOPS> <# pipelines> <payload size> <S2 addr> <S3 addr> ...
-    if (argc < 4) usage(argc, argv);
+    if (argc < 7) usage(argc, argv);
 
-    size_t srv_id = atoi(argv[1]);
+    int iarg = 1;
+    size_t srv_id = atoi(argv[iarg]);
+    global_sid = srv_id;
     if (srv_id < 1) {
         std::cout << "server ID should be greater than zero." << std::endl;
         exit(0);
     }
 
-    std::string my_endpoint = argv[2];
+    iarg++;
+    std::string my_endpoint = argv[iarg];
     if (my_endpoint.find("tcp://") == std::string::npos) {
         my_endpoint = "tcp://" + my_endpoint;
     }
 
-    size_t duration = atoi(argv[3]);
+    iarg++;
+    size_t duration = atoi(argv[iarg]);
     if (duration < 1) {
         std::cout << "duration should be greater than zero." << std::endl;
         exit(0);
     }
 
-    if (srv_id > 1) {
-        // Follower.
-        return bench_config(srv_id, my_endpoint, duration);
+    iarg++;
+    int complexity = atoi(argv[iarg]);
+    if (complexity < 0 || complexity > 3) {
+        std::cout << "complexity should be between 0 and 3." << std::endl;
+        exit(0);
     }
 
-    if (argc < 7) usage(argc, argv);
+    iarg++;
+    int log_level = atoi(argv[iarg]);
+    if (log_level < -1 || log_level > 6) {
+        std::cout << "log level should be between -1 and 6." << std::endl;
+        exit(0);
+    }
 
-    size_t iops = atoi(argv[4]);
+    iarg++;
+    std::string workdir(argv[iarg]);
+    global_workdir = workdir;
+
+    if (srv_id > 1) {
+        // Follower.
+        bench_config cfg = bench_config(srv_id, my_endpoint, duration, complexity, log_level);
+        cfg.workdir = workdir;
+        return cfg;
+    }
+
+    ensure_dir(workdir);
+
+    if (argc < 10) usage(argc, argv);
+
+    iarg++;
+    size_t iops = atoi(argv[iarg]);
     if (iops < 1 || iops > 1000000) {
         std::cout << "valid IOPS range: 1 - 1M." << std::endl;
         exit(0);
     }
 
-    size_t num_threads = atoi(argv[5]);
+    iarg++;
+    size_t num_threads = atoi(argv[iarg]);
     if (num_threads < 1 || num_threads > 128) {
         std::cout << "valid thread number range: 1 - 128." << std::endl;
         exit(0);
     }
 
-    size_t payload_size = atoi(argv[6]);
+    iarg++;
+    int parallel = atoi(argv[iarg]);
+    if (parallel < 1 || parallel > 10000) {
+        std::cout << "valid parallel range: 1 - 10000." << std::endl;
+        exit(0);
+    }
+
+    iarg++;
+    size_t payload_size = atoi(argv[iarg]);
     if (payload_size < 1 || payload_size > 16 * 1024 * 1024) {
         std::cout << "valid payload size range: 1 byte - 16 MB." << std::endl;
         exit(0);
     }
 
-    bench_config ret(srv_id, my_endpoint, duration, iops, num_threads, payload_size);
+    bench_config ret(
+        srv_id, my_endpoint, duration, complexity, log_level, parallel, iops, num_threads, payload_size, workdir);
 
-    for (int ii = 7; ii < argc; ++ii) {
+    iarg++;
+    for (int ii = iarg; ii < argc; ++ii) {
         std::string cur_endpoint = argv[ii];
         if (cur_endpoint.find("tcp://") == std::string::npos) {
             cur_endpoint = "tcp://" + cur_endpoint;
