@@ -4,6 +4,7 @@
 #define _CERT_HXX_
 
 #include "buffer.hxx"
+#include <iostream>
 #include <mutex>
 #include <unordered_map>
 #include <vector>
@@ -51,11 +52,11 @@ public:
 
     inline std::unordered_map<int32, ptr<buffer>> get_sigs() { return signatures_; }
 
-    ptr<buffer> serialize(size_t tail = 0) {
+    ptr<buffer> serialize(ssize_t tail = 0) {
         std::lock_guard<std::recursive_mutex> guard(mutex_);
         size_t total_size = sizeof(int32) + 2 * sizeof(ulong) + sizeof(int32);
         for (auto& pair: signatures_) {
-            total_size += sizeof(int32) + sizeof(int32) + pair.second->size();
+            total_size += sizeof(ulong) * 2 + pair.second->size();
         }
 
         if (tail > 0) {
@@ -106,8 +107,6 @@ protected:
     std::unordered_map<int32, ptr<buffer>> signatures_;
 
     int quorum_ratio_reciprocal_;
-
-private:
     std::recursive_mutex mutex_;
 };
 
@@ -145,9 +144,14 @@ public:
     }
 
     ptr<buffer> serialize() {
-        size_t request_size = sizeof(size_t) + (request_ == nullptr ? 0 : request_->size());
+        std::lock_guard<std::recursive_mutex> guard(mutex_);
+        size_t request_size = sizeof(int32) + (request_ == nullptr ? 0 : request_->size());
         ptr<buffer> buf = certificate::serialize(request_size);
-        buf->put(request_ == nullptr ? nullptr : request_->data_begin(), request_size);
+        if (request_ != nullptr) {
+            buf->put(request_->data_begin(), request_->size());
+        } else {
+            buf->put((int32)0);
+        }
         buf->pos(0);
         return buf;
     }
@@ -183,7 +187,6 @@ public:
 
 private:
     ptr<buffer> request_;
-    std::recursive_mutex mutex_;
 };
 } // namespace nuraft
 

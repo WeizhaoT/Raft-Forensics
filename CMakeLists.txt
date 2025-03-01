@@ -6,6 +6,10 @@ find_package(OpenSSL REQUIRED)
 # set (OPENSSL_LIBRARY_PATH "/usr/lib/x86_64-linux-gnu")
 # set (OPENSSL_INCLUDE_PATH "/usr/include/openssl")
 
+# set (LIBTRACE "/usr/lib/x86_64-linux-gnu/libboost_stacktrace_basic.a") 
+# set (TRACE_INCLUDE_PATH "/usr/include/boost")
+# include_directories(BEFORE ${TRACE_INCLUDE_PATH})
+
 # === Build type (default: RelWithDebInfo, O2) ===========
 if (NOT CMAKE_BUILD_TYPE)
     set(DEFAULT_BUILD_TYPE "RelWithDebInfo")
@@ -189,6 +193,7 @@ if (NOT WIN32)
     set(LIBZ z)
 endif()
 set(LIBRARIES
+    # ${LIBTRACE}
     ${LIBSSL}
     ${LIBCRYPTO}
     ${LIBBOOST_SYSTEM}

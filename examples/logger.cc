@@ -29,7 +29,7 @@ limitations under the License.
 #include <iomanip>
 #include <iostream>
 
-#include <boost/stacktrace.hpp>
+// #include <boost/stacktrace.hpp>
 
 #include <assert.h>
 
@@ -454,8 +454,8 @@ void SimpleLoggerMgr::handleSegAbort(int sig) {
 #if defined(__linux__) || defined(__APPLE__)
     SimpleLoggerMgr* mgr = SimpleLoggerMgr::get();
     signal(SIGABRT, mgr->oldSigAbortHandler);
-    std::cerr << "[Crash] flushing from boost stacktrace" << std::endl;
-    std::cerr << boost::stacktrace::stacktrace() << std::endl;
+    // std::cerr << "[Crash] flushing from boost stacktrace" << std::endl;
+    // std::cerr << boost::stacktrace::stacktrace() << std::endl;
     mgr->enableOnlyOneDisplayer();
     mgr->flushAllLoggers(1, "Abort");
     mgr->logStackBacktrace();

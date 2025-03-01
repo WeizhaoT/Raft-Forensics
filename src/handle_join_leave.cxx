@@ -42,8 +42,7 @@ ptr<resp_msg> raft_server::handle_add_srv_req(req_msg& req) {
     ptr<resp_msg> resp = cs_new<resp_msg>(state_->get_term(), msg_type::add_server_response, id_, leader_);
 
     if (entries.size() != 1 || entries[0]->get_val_type() != log_val_type::cluster_server) {
-        p_db("bad add server request as we are expecting one log entry "
-             "with value type of ClusterServer");
+        p_db("bad add server request as we are expecting one log entry with value type of ClusterServer");
         resp->set_result_code(cmd_result_code::BAD_REQUEST);
         return resp;
     }
@@ -58,9 +57,7 @@ ptr<resp_msg> raft_server::handle_add_srv_req(req_msg& req) {
     check_srv_to_leave_timeout();
     ptr<srv_config> srv_conf = srv_config::deserialize(entries[0]->get_buf());
     if (peers_.find(srv_conf->get_id()) != peers_.end() || id_ == srv_conf->get_id()) {
-        p_wn("the server to be added has a duplicated "
-             "id with existing server %d",
-             srv_conf->get_id());
+        p_wn("the server to be added has a duplicated id with existing server %d", srv_conf->get_id());
         resp->set_result_code(cmd_result_code::SERVER_ALREADY_EXISTS);
         return resp;
     }

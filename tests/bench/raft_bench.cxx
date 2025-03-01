@@ -234,7 +234,7 @@ int add_servers(server_stuff& stuff, const bench_config& config) {
         srv_config srv_conf_to_add(server_id_to_add, 1, config.endpoints_[ii], std::string(), false, 50);
         ptr<raft_result> ret = stuff.raft_instance_->add_srv(srv_conf_to_add);
         if (!ret->get_accepted()) {
-            _msg(" .. failed");
+            _msg(" .. failed; code %d (%s)", ret->get_result_code(), ret->get_result_str().c_str());
             return -1;
         }
 

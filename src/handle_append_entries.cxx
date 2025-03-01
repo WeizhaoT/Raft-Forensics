@@ -959,7 +959,8 @@ ptr<resp_msg> raft_server::handle_append_entries(req_msg& req) {
         // Append new log entries
         while (cnt < req.log_entries().size()) {
             ptr<log_entry> entry = req.log_entries().at(cnt++);
-            p_tr("append at %lu, term %lu, timestamp %lu\n",
+            p_tr("append type %d at %lu, term %lu, timestamp %lu\n",
+                 entry->get_val_type(),
                  log_store_->next_slot(),
                  entry->get_term(),
                  entry->get_timestamp());

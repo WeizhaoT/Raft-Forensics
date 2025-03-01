@@ -251,6 +251,9 @@ raft_server::raft_server(context* ctx, const init_options& opt)
         print_msg += temp_buf;
     }
 
+    //! FORENSICS:
+    new_leader_certificate();
+
     sprintf(temp_buf, "my id: %d, %s\n", id_, (im_learner_) ? "learner" : "voting_member");
     print_msg += temp_buf;
     sprintf(temp_buf, "num peers: %d\n", (int)peers_.size());
