@@ -196,6 +196,13 @@ public:
      * @return
      */
     virtual ptr<log_entry> last_app_log_entry() = 0;
+
+    /**
+     * ! FORENSICS:
+     *
+     * @return
+     */
+    virtual std::string display_log_entries() { return std::string("NOT IMPLEMENTED"); };
 };
 
 } // namespace nuraft

@@ -60,10 +60,8 @@ class LatencyItem;
 class MapWrapper;
 class LatencyDump {
 public:
-    virtual std::string dump(MapWrapper* map_w,
-                             const LatencyCollectorDumpOptions& opt) = 0;
-    virtual std::string dumpTree(MapWrapper* map_w,
-                                 const LatencyCollectorDumpOptions& opt) = 0;
+    virtual std::string dump(MapWrapper* map_w, const LatencyCollectorDumpOptions& opt) = 0;
+    virtual std::string dumpTree(MapWrapper* map_w, const LatencyCollectorDumpOptions& opt) = 0;
 
     // To make child class be able to access internal map.
     std::unordered_map<std::string, LatencyItem*>& getMap(MapWrapper* map_w);
@@ -220,10 +218,7 @@ private:
     std::unordered_map<std::string, LatencyItem*> map;
 };
 
-inline std::unordered_map<std::string, LatencyItem*>&
-LatencyDump::getMap(MapWrapper* map_w) {
-    return map_w->map;
-}
+inline std::unordered_map<std::string, LatencyItem*>& LatencyDump::getMap(MapWrapper* map_w) { return map_w->map; }
 
 using MapWrapperSP = ashared_ptr<MapWrapper>;
 // using MapWrapperSP = std::shared_ptr<MapWrapper>;
@@ -356,9 +351,7 @@ public:
         return (item) ? item->getPercentile(percentile) : 0;
     }
 
-    std::string
-    dump(LatencyDump* dump_inst,
-         const LatencyCollectorDumpOptions& opt = LatencyCollectorDumpOptions()) {
+    std::string dump(LatencyDump* dump_inst, const LatencyCollectorDumpOptions& opt = LatencyCollectorDumpOptions()) {
         MapWrapperSP cur_map_p = latestMap;
         MapWrapper* cur_map = cur_map_p.get();
 
@@ -449,11 +442,9 @@ struct LatencyCollectWrapper {
 };
 
 #if defined(WIN32) || defined(_WIN32)
-#define collectFuncLatency(lat) \
-    LatencyCollectWrapper LCW__func_latency__((lat), __FUNCTION__)
+#define collectFuncLatency(lat) LatencyCollectWrapper LCW__func_latency__((lat), __FUNCTION__)
 #else
 #define collectFuncLatency(lat) LatencyCollectWrapper LCW__func_latency__((lat), __func__)
 #endif
 
-#define collectBlockLatency(lat, name) \
-    LatencyCollectWrapper LCW__block_latency__((lat), name)
+#define collectBlockLatency(lat, name) LatencyCollectWrapper LCW__block_latency__((lat), name)

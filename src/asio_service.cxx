@@ -101,11 +101,12 @@ using ssl_context = asio::ssl::context;
 //     ulong        term                (8),
 //     ulong        next_idx            (8),
 //     bool         accepted            (1),
+//!    ulong        lc_needed           (8),
 //     int32        ctx data dize       (4),
 //     ulong        flags + CRC32       (8),
 //     -------------------------------------
 //                  total               (39)
-#define RPC_RESP_HEADER_SIZE (4 * 3 + 8 * 3 + 1 * 3)
+#define RPC_RESP_HEADER_SIZE (4 * 3 + 8 * 4 + 1 * 3)
 
 #define DATA_SIZE_LEN (4)
 #define CRC_FLAGS_LEN (8)
@@ -307,13 +308,13 @@ public:
             asio::buffer(header_->data(), RPC_REQ_HEADER_SIZE),
             [this, self](const ERROR_CODE& err, size_t) -> void {
                 if (err) {
-                    p_er("session %lu failed to read rpc header from socket %s:%u "
-                         "due to error %d, %s, ref count %u",
+                    p_er("session %lu failed to read rpc header from socket %s:%u due to error %s (code %d), ref count "
+                         "%u",
                          session_id_,
                          cached_address_.c_str(),
                          cached_port_,
-                         err.value(),
                          err.message().c_str(),
+                         err.value(),
                          self.use_count());
                     this->stop();
                     return;
@@ -351,8 +352,7 @@ public:
                 int32 data_size = header_->get_int();
                 // Up to 1GB.
                 if (data_size < 0 || data_size > 0x40000000) {
-                    p_er("bad log data size in the header %d, stop "
-                         "this session to protect further corruption",
+                    p_er("bad log data size in the header %d, stop this session to protect further corruption",
                          data_size);
                     this->stop();
                     return;
@@ -417,8 +417,7 @@ private:
         if (!err) {
             this->read_complete(header_, log_ctx);
         } else {
-            p_er("session %lu failed to read rpc log data from socket due "
-                 "to error %d, %s",
+            p_er("session %lu failed to read rpc log data from socket due to error %d, %s",
                  session_id_,
                  err.value(),
                  err.message().c_str());
@@ -491,74 +490,16 @@ private:
                     req->set_certificate(cert);
                 }
 
-                size_t LOG_ENTRY_SIZE = 8 + 1 + 4;
-                if (flags_ & INCLUDE_LOG_TIMESTAMP) {
-                    LOG_ENTRY_SIZE += 8;
-                }
-
                 while (log_ctx_size > ss.pos()) {
-                    if (log_ctx_size - ss.pos() < LOG_ENTRY_SIZE) {
+                    ptr<log_entry> entry = log_entry::deserialize(ss, bool(flags_ & INCLUDE_LOG_TIMESTAMP));
+
+                    if (entry == nullptr) {
                         // Possibly corrupted packet. Stop here.
+                        std::cout << "des out " << std::endl;
                         p_wn("wrong log ctx size %zu pos %zu, stop this session", log_ctx_size, ss.pos());
                         this->stop();
                         return;
                     }
-                    ulong term = ss.get_u64();
-                    log_val_type val_type = (log_val_type)ss.get_u8();
-                    uint64_t timestamp = (flags_ & INCLUDE_LOG_TIMESTAMP) ? ss.get_u64() : 0;
-
-                    size_t val_size = ss.get_i32();
-                    if (log_ctx_size - ss.pos() < val_size) {
-                        // Out-of-bound size.
-                        p_wn("wrong value size %zu log ctx %zu %zu, "
-                             "stop this session",
-                             val_size,
-                             log_ctx_size,
-                             ss.pos());
-                        this->stop();
-                        return;
-                    }
-
-                    ptr<buffer> buf(buffer::alloc(val_size));
-                    ss.get_buffer(buf);
-
-                    //! FORENSICS: BEGIN
-                    ptr<buffer> prev, sig;
-
-                    size_t prev_size = (size_t)ss.get_i32();
-                    if (ss.size() - ss.pos() < prev_size) {
-                        // Out-of-bound size.
-                        p_wn("wrong value size %zu log ctx %zu %zu (prevptr), "
-                             "stop this session",
-                             prev_size,
-                             ss.size(),
-                             ss.pos());
-                        this->stop();
-                        return;
-                    }
-                    if (prev_size > 0) {
-                        prev = buffer::alloc(prev_size);
-                        ss.get_buffer(prev);
-                    }
-
-                    size_t sig_size = (size_t)ss.get_i32();
-                    if (ss.size() - ss.pos() < sig_size) {
-                        // Out-of-bound size.
-                        p_wn("wrong value size %zu log ctx %zu %zu, "
-                             "stop this session",
-                             sig_size,
-                             ss.size(),
-                             ss.pos());
-                        this->stop();
-                        return;
-                    }
-                    if (sig_size > 0) {
-                        sig = buffer::alloc(sig_size);
-                        ss.get_buffer(sig);
-                    }
-                    //! FORENSICS: END
-
-                    ptr<log_entry> entry(cs_new<log_entry>(term, buf, val_type, timestamp));
                     req->log_entries().push_back(entry);
                 }
             }
@@ -568,6 +509,7 @@ private:
             if (impl_->get_options().read_req_meta_
                 && (!meta_str.empty() || impl_->get_options().invoke_req_cb_on_empty_meta_)) {
                 if (!impl_->get_options().read_req_meta_(req_to_params(req), meta_str)) {
+                    p_db("meta str discarded");
                     this->stop();
                     return;
                 }
@@ -596,7 +538,6 @@ private:
                     // This is needed to avoid circular reference.
                     res.reset();
                 });
-
             } else {
                 // Response should already be ready when we reach here.
                 if (resp->has_cb()) {
@@ -605,12 +546,8 @@ private:
                 }
                 on_resp_ready(req, resp);
             }
-
         } catch (std::exception& ex) {
-            p_er("session %lu failed to process request message "
-                 "due to error: %s",
-                 this->session_id_,
-                 ex.what());
+            p_er("session %lu failed to process request message due to error: %s", this->session_id_, ex.what());
             this->stop();
         }
     }
@@ -647,11 +584,11 @@ private:
             size_t resp_sig_size = 0;
             ptr<buffer> sig = resp->get_signature();
             if (sig != nullptr) {
-                p_in("sig is not null");
+                p_db("responding sig");
                 flags |= INCLUDE_SIG;
                 resp_sig_size += sizeof(int32) + sig->size() + sizeof(ulong);
             } else {
-                p_in("sig is null");
+                p_db("responding without sig");
             }
 
             size_t carried_data_size = resp_sig_size + resp_meta_size + resp_hint_size + resp_ctx_size;
@@ -661,6 +598,8 @@ private:
             ptr<buffer> resp_buf = buffer::alloc(buf_size);
             buffer_serializer bs(resp_buf);
 
+            //! FORENSICS:
+            // [1:marker][1:msg_type][4:src][4:dst][8:term][8:nxt_idx][1:accepted][**8:lc_needed**][4:carried_data_size]
             const byte RESP_MARKER = 0x1;
             bs.put_u8(RESP_MARKER);
             bs.put_u8(resp->get_type());
@@ -669,6 +608,10 @@ private:
             bs.put_u64(resp->get_term());
             bs.put_u64(resp->get_next_idx());
             bs.put_u8(resp->get_accepted());
+
+            //! FORENSICS:
+            bs.put_u64(resp->get_lc_needed());
+
             bs.put_i32(carried_data_size);
 
             // Calculate CRC32 on header only.
@@ -1064,8 +1007,7 @@ public:
         // Socket should be idle now. If not, it should be a bug.
         set_busy_flag(true);
 
-        // If we reach here, that means connection is valid.
-        // Reset the counter.
+        // If we reach here, that means connection is valid. Reset the counter.
         num_send_fails_ = 0;
 
         // serialize req, send and read response
@@ -1073,37 +1015,33 @@ public:
         int32 log_data_size(0);
 
         uint32_t flags = 0x0;
-        size_t LOG_ENTRY_SIZE = 8 + 1 + 4;
+
         if (impl_->get_options().replicate_log_timestamp_) {
-            LOG_ENTRY_SIZE += 8;
             flags |= INCLUDE_LOG_TIMESTAMP;
         }
 
         for (auto& entry: req->log_entries()) {
             ptr<log_entry>& le = entry;
-            ptr<buffer> entry_buf = buffer::alloc(LOG_ENTRY_SIZE + le->get_buf().size());
-#if 0
-            entry_buf->put( le->get_term() );
-            entry_buf->put( (byte)le->get_val_type() );
-            entry_buf->put( (int32)le->get_buf().size() );
-            le->get_buf().pos(0);
-            entry_buf->put( le->get_buf() );
-            entry_buf->pos( 0 );
-#else
-            buffer_serializer ss(entry_buf);
-            ss.put_u64(le->get_term());
-            ss.put_u8(le->get_val_type());
-            if (impl_->get_options().replicate_log_timestamp_) {
-                ss.put_u64(le->get_timestamp());
-            }
-            ss.put_i32(le->get_buf().size());
-            ss.put_raw(le->get_buf().data_begin(), le->get_buf().size());
-#endif
+            // ptr<buffer> entry_buf = buffer::alloc(LOG_ENTRY_SIZE + le->get_buf().size());
+            // #if 0
+            //             entry_buf->put( le->get_term() );
+            //             entry_buf->put( (byte)le->get_val_type() );
+            //             entry_buf->put( (int32)le->get_buf().size() );
+            //             le->get_buf().pos(0);
+            //             entry_buf->put( le->get_buf() );
+            //             entry_buf->pos( 0 );
+            // #else
+            //             buffer_serializer ss(entry_buf);
+            //             ss.put_u64(le->get_term());
+            //             ss.put_u8(le->get_val_type());
+            //             if (impl_->get_options().replicate_log_timestamp_) {
+            //                 ss.put_u64(le->get_timestamp());
+            //             }
+            //             ss.put_i32(le->get_buf().size());
+            //             ss.put_raw(le->get_buf().data_begin(), le->get_buf().size());
+            // #endif
             //! FORENSICS:
-            entry_buf->put((int32)0);
-            entry_buf->put((int32)0);
-            entry_buf->pos(0);
-
+            ptr<buffer> entry_buf = le->serialize(impl_->get_options().replicate_log_timestamp_);
             log_entry_bufs.push_back(entry_buf);
             log_data_size += (int32)entry_buf->size();
         }
@@ -1128,7 +1066,7 @@ public:
             cert_size = sizeof(int32) + cc_serial->size();
         }
 
-        ptr<buffer> req_buf = buffer::alloc(RPC_REQ_HEADER_SIZE + meta_size + log_data_size);
+        ptr<buffer> req_buf = buffer::alloc(RPC_REQ_HEADER_SIZE + meta_size + log_data_size + cert_size);
 
         req_buf->pos(0);
         byte* req_buf_data = req_buf->data();
@@ -1144,7 +1082,7 @@ public:
         req_buf->put(req->get_commit_idx());
 
         //! FORENSICS: Buffer size update
-        req_buf->put((int32)meta_size + log_data_size + (int32)cert_size);
+        req_buf->put((int32)(meta_size + log_data_size + cert_size));
 
         // Calculate CRC32 on header-only.
         uint32_t crc_val = crc32_8(req_buf_data, RPC_REQ_HEADER_SIZE - CRC_FLAGS_LEN, 0);
@@ -1298,7 +1236,7 @@ private:
             abandoned_ = true;
             ptr<resp_msg> rsp;
             ptr<rpc_exception> except(cs_new<rpc_exception>(
-                sstrfmt("failed to connect to peer %d, %s:%s, error %d, %s")
+                sstrfmt("failed to connect to peer %d at %s:%s, error %d, %s")
                     .fmt(req->get_dst(), host_.c_str(), port_.c_str(), err.value(), err.message().c_str()),
                 req));
             when_done(rsp, except);
@@ -1325,8 +1263,7 @@ private:
             // Immediately stop.
             ptr<resp_msg> resp;
             ptr<rpc_exception> except(cs_new<rpc_exception>(
-                sstrfmt("failed SSL handshake with peer %d, %s:%s, "
-                        "error %d, %s")
+                sstrfmt("failed SSL handshake with peer %d, %s:%s, error %d, %s")
                     .fmt(req->get_dst(), host_.c_str(), port_.c_str(), err.value(), err.message().c_str()),
                 req));
             when_done(resp, except);
@@ -1352,14 +1289,12 @@ private:
                                resp_buf,
                                std::placeholders::_1,
                                std::placeholders::_2));
-
         } else {
             operation_timer_.cancel();
             abandoned_ = true;
             ptr<resp_msg> rsp;
             ptr<rpc_exception> except(cs_new<rpc_exception>(
-                sstrfmt("failed to send request to peer %d, %s:%s, "
-                        "error %d, %s")
+                sstrfmt("failed to send request to peer %d, %s:%s, error %d, %s")
                     .fmt(req->get_dst(), host_.c_str(), port_.c_str(), err.value(), err.message().c_str()),
                 req));
             close_socket();
@@ -1377,8 +1312,7 @@ private:
             abandoned_ = true;
             ptr<resp_msg> rsp;
             ptr<rpc_exception> except(cs_new<rpc_exception>(
-                sstrfmt("failed to read response to peer %d, %s:%s, "
-                        "error %d, %s")
+                sstrfmt("failed to read response to peer %d, %s:%s, error %d, %s")
                     .fmt(req->get_dst(), host_.c_str(), port_.c_str(), err.value(), err.message().c_str()),
                 req));
             close_socket();
@@ -1405,25 +1339,26 @@ private:
             return;
         }
 
+        //! FORENSICS:
+        // [1:marker][1:msg_type][4:src][4:dst][8:term][8:nxt_idx][1:accepted][**8:lc_needed**][4:carried_data_size]
         bs.pos(1);
         byte msg_type_val = bs.get_u8();
         int32 src = bs.get_i32();
         int32 dst = bs.get_i32();
         ulong term = bs.get_u64();
         ulong nxt_idx = bs.get_u64();
-        byte accepted_val = bs.get_u8();
+        bool accepted = bs.get_u8() == 1;
 
         //! FORENSICS: read LC
         ulong lc_needed_val = bs.get_u64();
+
         int32 carried_data_size = bs.get_i32();
-        ptr<resp_msg> rsp(
-            cs_new<resp_msg>(term, (msg_type)msg_type_val, src, dst, nxt_idx, accepted_val == 1, lc_needed_val));
+        ptr<resp_msg> rsp(cs_new<resp_msg>(term, (msg_type)msg_type_val, src, dst, nxt_idx, accepted, lc_needed_val));
 
         //! FORENSICS: skip reading signature
-        if (!(flags & INCLUDE_SIG) && !(flags & INCLUDE_META) && impl_->get_options().read_resp_meta_
+        if (!(flags & (INCLUDE_SIG | INCLUDE_META)) && impl_->get_options().read_resp_meta_
             && impl_->get_options().invoke_resp_cb_on_empty_meta_) {
-            // If callback is given, but meta is empty, and
-            // the "always invoke" flag is set, invoke it.
+            // If callback is given, but meta is empty, and the "always invoke" flag is set, invoke it.
             bool meta_ok = handle_custom_resp_meta(req, rsp, when_done, std::string());
             if (!meta_ok) return;
         }
@@ -1459,7 +1394,7 @@ private:
                   std::error_code err,
                   size_t bytes_transferred) {
         //! FORENSICS: include signature check
-        if (!(flags & INCLUDE_SIG) && !(flags & INCLUDE_META) && !(flags & INCLUDE_HINT)) {
+        if (!(flags & (INCLUDE_SIG | INCLUDE_META | INCLUDE_HINT))) {
             // Neither meta nor hint exists,
             // just use the buffer as it is for ctx.
             ctx_buf->pos(0);
@@ -1476,13 +1411,16 @@ private:
         buffer_serializer bs(ctx_buf);
         int remaining_len = ctx_buf->size();
 
+        p_db("Parsing buffer of size %d", remaining_len);
+
         //! FORENSICS: read signature
         if (flags & INCLUDE_SIG) {
-            p_in("Reading signature");
+            p_db("Reading signature 1");
             size_t resp_sig_len = 0;
             void* resp_sig_raw = bs.get_bytes(resp_sig_len);
             ulong resp_sig_idx = bs.get_u64();
 
+            p_db("Reading signature 2");
             if (resp_sig_len > 0) {
                 ptr<buffer> sig = buffer::alloc(resp_sig_len);
                 sig->put_raw((byte*)resp_sig_raw, resp_sig_len);
@@ -1491,11 +1429,13 @@ private:
                 rsp->set_signature(sig, resp_sig_idx);
             }
 
+            p_db("Reading signature 3");
             remaining_len -= sizeof(int32) + resp_sig_len + sizeof(ulong);
         }
 
         // 1) Custom meta.
         if (flags & INCLUDE_META) {
+            p_db("Reading meta");
             size_t resp_meta_len = 0;
             void* resp_meta_raw = bs.get_bytes(resp_meta_len);
 
@@ -1513,6 +1453,7 @@ private:
 
         // 2) Hint.
         if (flags & INCLUDE_HINT) {
+            p_db("Reading hint");
             size_t hint_len = 0;
             uint16_t hint_version = bs.get_u16();
             (void)hint_version;
@@ -1525,11 +1466,13 @@ private:
         assert(remaining_len >= 0);
         if (remaining_len) {
             // It has context, read it.
+            p_db("Reading context");
             ptr<buffer> actual_ctx = buffer::alloc(remaining_len);
             ctx_buf->get(actual_ctx);
             rsp->set_ctx(actual_ctx);
         }
 
+        p_db("Reading finished");
         operation_timer_.cancel();
         set_busy_flag(false);
         ptr<rpc_exception> except;
@@ -1683,10 +1626,8 @@ void asio_service_impl::worker_entry() {
             // LCOV_EXCL_START
             num_active_workers_.fetch_sub(1);
             exception_count++;
-            p_er("asio worker thread got exception: %s, "
-                 "current number of workers: %zu, "
-                 "exception count (in 1-min window): %zu, "
-                 "stopping status %u",
+            p_er("asio worker thread got exception: %s, current number of workers: %zu, "
+                 "exception count (in 1-min window): %zu, stopping status %u",
                  ee.what(),
                  num_active_workers_.load(),
                  exception_count.load(),

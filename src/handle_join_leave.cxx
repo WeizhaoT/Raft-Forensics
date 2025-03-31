@@ -91,13 +91,13 @@ ptr<resp_msg> raft_server::handle_add_srv_req(req_msg& req) {
     conf_to_add_ = std::move(srv_conf);
     timer_task<int32>::executor exec =
         (timer_task<int32>::executor)std::bind(&raft_server::handle_hb_timeout, this, std::placeholders::_1);
-    p_tr("Peer init");
+
     srv_to_join_ = cs_new<peer, ptr<srv_config>&, context&, timer_task<int32>::executor&, ptr<logger>&>(
         conf_to_add_, *ctx_, exec, l_);
-    p_tr("Peer init finished");
+
     invite_srv_to_join_cluster();
     resp->accept(log_store_->next_slot());
-    p_tr("Join accept");
+    p_tr("Inviting server %d to join the cluster", conf_to_add_->get_id());
     return resp;
 }
 
@@ -113,18 +113,22 @@ void raft_server::invite_srv_to_join_cluster() {
 
     ptr<cluster_config> c_conf = get_config();
     ulong term = state_->get_term();
-    p_tr("got term");
     ptr<buffer> new_conf_buf(c_conf->serialize());
-    p_tr("serialized config");
     req->log_entries().push_back(cs_new<log_entry>(term, new_conf_buf, log_val_type::conf));
     // req->log_entries().push_back(cs_new<log_entry>(state_->get_term(), c_conf->serialize(), log_val_type::conf));
 
-    p_tr("clone leader cert");
     //! FORENSICS: push leader certificate to the log entry
     ptr<leader_certificate> tmp_lc = leader_cert_->clone();
-    req->log_entries().push_back(cs_new<log_entry>(0, tmp_lc->serialize(), log_val_type::custom));
+    req->log_entries().push_back(cs_new<log_entry>(1, tmp_lc->serialize(), log_val_type::leader_cert));
 
-    p_tr("sending join request to peer");
+    //! FORENSICS: send self public key
+    ptr<buffer> pk_buf = public_key_->tobuf();
+    if (pk_buf != nullptr) {
+        req->log_entries().push_back(cs_new<log_entry>(0, pk_buf, log_val_type::public_key));
+    } else {
+        p_wn("self has null public key; public log entry not created");
+    }
+
     srv_to_join_->send_req(srv_to_join_, req, ex_resp_handler_);
     p_in("sent join request to peer %d, %s", srv_to_join_->get_id(), srv_to_join_->get_endpoint().c_str());
 }
@@ -132,9 +136,8 @@ void raft_server::invite_srv_to_join_cluster() {
 ptr<resp_msg> raft_server::handle_join_cluster_req(req_msg& req) {
     std::vector<ptr<log_entry>>& entries = req.log_entries();
     ptr<resp_msg> resp = cs_new<resp_msg>(state_->get_term(), msg_type::join_cluster_response, id_, req.get_src());
-    if (entries.size() != 1 || entries[0]->get_val_type() != log_val_type::conf) {
-        p_in("receive an invalid JoinClusterRequest as the log entry value "
-             "doesn't meet the requirements");
+    if (entries.size() > 3 || entries.size() == 0 || entries[0]->get_val_type() != log_val_type::conf) {
+        p_wn("receive an invalid JoinClusterRequest as the log entry value doesn't meet the requirements");
         return resp;
     }
 
@@ -144,8 +147,7 @@ ptr<resp_msg> raft_server::handle_join_cluster_req(req_msg& req) {
     //   not ruin the current request.
     bool reset_commit_idx = true;
     if (catching_up_) {
-        p_wn("this server is already in log syncing mode, "
-             "but let's do it again: sm idx %zu, quick commit idx %zu, "
+        p_wn("this server is already in log syncing mode, but let's do it again: sm idx %zu, quick commit idx %zu, "
              "will not reset commit index",
              sm_commit_index_.load(),
              quick_commit_index_.load());
@@ -172,6 +174,29 @@ ptr<resp_msg> raft_server::handle_join_cluster_req(req_msg& req) {
     follower_param.ctx = &my_term;
     (void)ctx_->cb_func_.call(cb_func::BecomeFollower, &follower_param);
 
+    //! FORENSICS: parse leader certificate and leader public key
+    ptr<buffer> lc_buf = nullptr, pk_buf = nullptr;
+    for (size_t i = 1; i < entries.size(); ++i) {
+        if (entries[i]->get_val_type() == log_val_type::leader_cert) {
+            lc_buf = entries[i]->get_buf_ptr();
+        } else if (entries[i]->get_val_type() == log_val_type::public_key) {
+            pk_buf = entries[i]->get_buf_ptr();
+        }
+    }
+    // //! FORENSICS: read pubkey
+    // if (entries.size() == 2 && entries[1]->get_val_type() == log_val_type::public_key) {
+    //     ptr<buffer> pk_buf = entries[1]->get_buf_ptr();
+    //     if (pk_buf != nullptr) {
+    //         ptr<pubkey_intf> pubkey = cs_new<pubkey_t>(*pk_buf);
+    //         conf_to_add_->set_public_key(pubkey);
+    //         p_in("server %d has pubkey %s", conf_to_add_->get_id(), pubkey->str().c_str());
+    //     } else {
+    //         p_wn("null public key in the public key log entry");
+    //     }
+    // } else {
+    //     p_wn("second entry exists, but has unexpected type %d", entries[1]->get_val_type());
+    // }
+
     ptr<cluster_config> c_config = cluster_config::deserialize(entries[0]->get_buf());
     // WARNING: We should make cluster config durable here. Otherwise, if
     //          this server gets restarted before receiving the first
@@ -181,21 +206,24 @@ ptr<resp_msg> raft_server::handle_join_cluster_req(req_msg& req) {
     ctx_->state_mgr_->save_config(*c_config);
     reconfigure(c_config);
 
-    //! FORENSICS: verify leader certificate
-    p_in("leader %d's pubkey = %s", int(leader_), get_srv_config(leader_)->get_public_key()->str().c_str());
-
-    if (entries.size() == 2) {
-        ptr<buffer> lc_buffer = req.log_entries().at(1)->get_buf_ptr();
-        verify_and_save_leader_certificate(req, lc_buffer);
-        p_in("leader certificate is verified and saved");
+    if (pk_buf != nullptr) {
+        ptr<pubkey_intf> pubkey = cs_new<pubkey_t>(*pk_buf);
+        p_in("leader %d has pubkey %s", req.get_src(), pubkey->str().c_str());
+        get_srv_config(leader_)->set_public_key(pubkey);
+        if (lc_buf != nullptr) {
+            if (!verify_and_save_leader_certificate(req, lc_buf)) {
+                p_wn("failed to save leader certificate in the log entry");
+            }
+        } else {
+            p_wn("no leader certificate in the log entry");
+        }
     } else {
-        p_wn("no leader certificate in the log entry");
+        p_wn("failed to find public key in the log entry");
     }
 
     resp->accept(quick_commit_index_.load() + 1);
 
     //! FORENSICS: Set signature
-    p_in("Set sig");
     resp->set_signature(public_key_->tobuf(), 0);
     return resp;
 }
@@ -203,26 +231,22 @@ ptr<resp_msg> raft_server::handle_join_cluster_req(req_msg& req) {
 void raft_server::handle_join_cluster_resp(resp_msg& resp) {
     if (srv_to_join_ && srv_to_join_ == resp.get_peer()) {
         if (resp.get_accepted()) {
-            //! FORENSICS: BEGIN (record public key)
+            // //! FORENSICS: BEGIN (record public key)
             int32 pid = srv_to_join_->get_id();
 
-            ptr<buffer> pk = resp.get_signature();
-            if (pk == nullptr) {
+            ptr<buffer> pk_buf = resp.get_signature();
+            if (pk_buf == nullptr) {
                 p_er("peer %d gave an empty public key, drop the message", pid);
                 return;
             }
 
-            p_in("new server (%d) has pubkey %s", pid, tobase64(*pk).c_str());
-            ptr<pubkey_intf> pubkey = cs_new<pubkey_t>(*pk);
-
-            // p_in("setting pubkey of server %d", srv_to_join_->get_id());
+            ptr<pubkey_intf> pubkey = cs_new<pubkey_t>(*pk_buf);
+            p_in("new server (%d) has pubkey %s", pid, pubkey->str().c_str());
             srv_to_join_->set_public_key(pubkey);
             conf_to_add_->set_public_key(pubkey);
-            //! FORENSICS: END
+            // //! FORENSICS: END
 
-            p_in("new server (%d) confirms it will join, "
-                 "start syncing logs to it",
-                 srv_to_join_->get_id());
+            p_in("new server (%d) confirms it will join, start syncing logs to it", srv_to_join_->get_id());
             sync_log_to_new_srv(resp.get_next_idx());
         } else {
             p_wn("new server (%d) cannot accept the invitation, give up", srv_to_join_->get_id());
@@ -242,8 +266,7 @@ void raft_server::sync_log_to_new_srv(ulong start_idx) {
     ptr<raft_params> params = ctx_->get_params();
     if ((params->log_sync_stop_gap_ > 0 && gap < (ulong)params->log_sync_stop_gap_)
         || params->log_sync_stop_gap_ == 0) {
-        p_in("[SYNC LOG] LogSync is done for server %d "
-             "with log gap %zu (%zu - %zu, limit %d), "
+        p_in("[SYNC LOG] LogSync is done for server %d with log gap %zu (%zu - %zu, limit %d), "
              "now put the server into cluster",
              srv_to_join_->get_id(),
              gap,

@@ -18,10 +18,10 @@ else
 fi
 
 sleeper=2
-tail=2
+tail=1
 gap=20
 cthreads=1
-duration=10
+duration=5
 parallel=1
 log_level=6
 
@@ -31,10 +31,12 @@ exec=$HOME/raft/build/tests/raft_bench
 dir=$HOME/raft/build
 
 rm -f "$dir"/*.log
+rm -f "$dir"/*.log.*
 rm -f "$dir"/dump*.txt
 
 for node in {2..3}; do
     PORTF=$((PORT + node))
+    # tmux send-keys -t "raft:$node" "valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes --log-file=$dir/valgrind-dump-$node.txt $exec $node 127.0.0.1:$PORTF $((duration + sleeper + tail)) $complexity $log_level $dir" Enter
     tmux send-keys -t "raft:$node" "$exec $node 127.0.0.1:$PORTF $((duration + sleeper + tail)) $complexity $log_level $dir" Enter
     ips="$ips 127.0.0.1:$PORTF"
 done

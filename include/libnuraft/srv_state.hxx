@@ -118,8 +118,7 @@ public:
         // term             8 bytes
         // voted_for        4 bytes
         // election timer   1 byte
-        ptr<buffer> buf = buffer::alloc(sizeof(uint8_t) + sizeof(uint64_t)
-                                        + sizeof(int32_t) + sizeof(uint8_t));
+        ptr<buffer> buf = buffer::alloc(sizeof(uint8_t) + sizeof(uint64_t) + sizeof(int32_t) + sizeof(uint8_t));
         buffer_serializer bs(buf);
         bs.put_u8(version);
         bs.put_u64(term_);

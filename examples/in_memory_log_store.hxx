@@ -75,6 +75,8 @@ public:
 
     ptr<log_entry> last_app_log_entry();
 
+    std::string display_log_entries();
+
 private:
     static ptr<log_entry> make_clone(const ptr<log_entry>& entry);
 

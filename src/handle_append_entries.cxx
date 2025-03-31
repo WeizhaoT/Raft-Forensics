@@ -39,6 +39,8 @@ limitations under the License.
 //! FORENSICS:
 #include "certificate.hxx"
 #include "openssl_ecdsa.hxx"
+#include <chrono>
+#include <thread>
 
 namespace nuraft {
 
@@ -132,8 +134,7 @@ bool raft_server::request_append_entries(ptr<peer> p) {
 
         } else if (num_not_responding_peers == 0 && num_stale_peers == 0 && params->custom_commit_quorum_size_ == 1) {
             // Recovered, both cases should be clear.
-            p_wn("2-node cluster's follower is responding now, "
-                 "restore quorum with default value");
+            p_wn("2-node cluster's follower is responding now, restore quorum with default value");
             ptr<raft_params> clone = cs_new<raft_params>(*params);
             clone->custom_commit_quorum_size_ = 0;
             clone->custom_election_quorum_size_ = 0;
@@ -148,13 +149,11 @@ bool raft_server::request_append_entries(ptr<peer> p) {
             // We should not re-establish the connection to
             // to-be-removed server, as it will block removing it
             // from `peers_` list.
-            p_wn("connection to peer %d is not active long time: %zu ms, "
-                 "but this peer should be removed. do nothing",
+            p_wn("connection to peer %d is not active long time: %zu ms, but this peer should be removed. do nothing",
                  p->get_id(),
                  last_active_time_ms);
         } else {
-            p_wn("connection to peer %d is not active long time: %zu ms, "
-                 "force re-connect",
+            p_wn("connection to peer %d is not active long time: %zu ms, force re-connect",
                  p->get_id(),
                  last_active_time_ms);
             need_to_reconnect = true;
@@ -235,8 +234,7 @@ bool raft_server::request_append_entries(ptr<peer> p) {
             if (p->get_long_puase_warnings() >= raft_server::raft_limits_.warning_limit_) {
                 int32 last_ts_ms = p->get_ls_timer_us() / 1000;
                 p->inc_recovery_cnt();
-                p_wn("recovered from long pause to peer %d, %d warnings, "
-                     "%d ms, %d times",
+                p_wn("recovered from long pause to peer %d, %d warnings, %d ms, %d times",
                      p->get_id(),
                      p->get_long_puase_warnings(),
                      last_ts_ms,
@@ -268,8 +266,7 @@ bool raft_server::request_append_entries(ptr<peer> p) {
             // the target log index number, step down and remove it
             // as soon as we get the corresponding response.
             srv_to_leave_->step_down();
-            p_in("srv_to_leave_ %d is safe to be erased from peer list, "
-                 "log idx %zu commit idx %zu, set flag",
+            p_in("srv_to_leave_ %d is safe to be erased from peer list, log idx %zu commit idx %zu, set flag",
                  srv_to_leave_->get_id(),
                  msg->get_last_log_idx(),
                  msg->get_commit_idx());
@@ -287,15 +284,10 @@ bool raft_server::request_append_entries(ptr<peer> p) {
         // Waiting time becomes longer than HB interval, warning.
         p->inc_long_pause_warnings();
         if (p->get_long_puase_warnings() < raft_server::raft_limits_.warning_limit_) {
-            p_wn("skipped sending msg to %d too long time, "
-                 "last msg sent %d ms ago",
-                 p->get_id(),
-                 last_ts_ms);
+            p_wn("skipped sending msg to %d too long time, last msg sent %d ms ago", p->get_id(), last_ts_ms);
 
         } else if (p->get_long_puase_warnings() == raft_server::raft_limits_.warning_limit_) {
-            p_wn("long pause warning to %d is too verbose, "
-                 "will suppress it from now",
-                 p->get_id());
+            p_wn("long pause warning to %d is too verbose, will suppress it from now", p->get_id());
         }
     }
     return false;
@@ -404,8 +396,7 @@ ptr<req_msg> raft_server::create_append_entries_req(ptr<peer>& pp) {
         static timer_helper msg_timer(5000000);
         int log_lv = msg_timer.timeout_and_reset() ? L_ERROR : L_TRACE;
         p_lv(log_lv,
-             "neither snapshot nor log exists, peer %d, last log %zu, "
-             "leader's start log %zu",
+             "neither snapshot nor log exists, peer %d, last log %zu, leader's start log %zu",
              p.get_id(),
              last_log_idx,
              starting_idx);
@@ -450,8 +441,7 @@ ptr<req_msg> raft_server::create_append_entries_req(ptr<peer>& pp) {
         }
     }
 
-    p_db("append_entries for %d with LastLogIndex=%llu, "
-         "LastLogTerm=%llu, EntriesLength=%d, CommitIndex=%llu, "
+    p_db("append_entries for %d with LastLogIndex=%llu, LastLogTerm=%llu, EntriesLength=%d, CommitIndex=%llu, "
          "Term=%llu, peer_last_sent_idx %zu",
          p.get_id(),
          last_log_idx,
@@ -465,8 +455,10 @@ ptr<req_msg> raft_server::create_append_entries_req(ptr<peer>& pp) {
     } else if (last_log_idx + 1 + 1 == adjusted_end_idx) {
         p_db("idx: %zu", last_log_idx + 1);
     } else {
-        p_db("idx range: %zu-%zu", last_log_idx + 1, adjusted_end_idx - 1);
+        p_db("idx range: %zu~%zu", last_log_idx + 1, adjusted_end_idx - 1);
     }
+
+    p_tr("Current logs: %s", log_store_->display_log_entries().c_str());
 
     ptr<req_msg> req(cs_new<req_msg>(
         term, msg_type::append_entries_request, id_, p.get_id(), last_log_term, last_log_idx, commit_idx));
@@ -489,7 +481,7 @@ ptr<req_msg> raft_server::create_append_entries_req(ptr<peer>& pp) {
         while (entry_to_sign != log_entries->rend()) {
             if ((*entry_to_sign)->get_val_type() == log_val_type::app_log) {
                 // insert the leader signature for the last app_log entry into v
-                auto entry_serialized = (*entry_to_sign)->serialize_sig();
+                auto entry_serialized = (*entry_to_sign)->serialize();
                 auto sig = this->get_signature(*entry_serialized);
                 ptr<log_entry> leader_sig_le = cs_new<log_entry>(0, sig, log_val_type::leader_sig);
                 v.push_back(leader_sig_le);
@@ -510,13 +502,13 @@ ptr<req_msg> raft_server::create_append_entries_req(ptr<peer>& pp) {
     for (auto term_to_share_ = p.get_lc_needed(); term_to_share_ <= term; term_to_share_++) {
         if (election_list_.find(term_to_share_) != election_list_.end()) {
             ptr<log_entry> lc_le =
-                cs_new<log_entry>(0, election_list_[term_to_share_]->serialize(), log_val_type::old_lc);
+                cs_new<log_entry>(0, election_list_[term_to_share_]->serialize(), log_val_type::leader_cert);
             v.push_back(lc_le);
             p_in("lc of term %zu re-sent to peer %d", term_to_share_, p.get_id());
         }
         if (all_commit_certs_.find(term_to_share_) != all_commit_certs_.end()) {
             ptr<log_entry> cc_le =
-                cs_new<log_entry>(0, all_commit_certs_[term_to_share_]->serialize(), log_val_type::old_cc);
+                cs_new<log_entry>(0, all_commit_certs_[term_to_share_]->serialize(), log_val_type::commit_cert);
             v.push_back(cc_le);
             p_in("cc of term %zu re-sent to peer %d", term_to_share_, p.get_id());
         }
@@ -573,9 +565,7 @@ ptr<resp_msg> raft_server::handle_append_entries(req_msg& req) {
     } _s_req(&serving_req_);
     timer_helper tt;
 
-    p_tr("from peer %d, req type: %d, req term: %ld, "
-         "req l idx: %ld (%zu), req c idx: %ld, "
-         "my term: %ld, my role: %d\n",
+    p_tr("from peer %d, req type: %d, req term: %ld, req l idx: %ld (%zu), req c idx: %ld, my term: %ld, my role: %d\n",
          req.get_src(),
          (int)req.get_type(),
          req.get_term(),
@@ -622,6 +612,15 @@ ptr<resp_msg> raft_server::handle_append_entries(req_msg& req) {
     bool log_okay = req.get_last_log_idx() == 0 || (log_term && req.get_last_log_term() == log_term)
                     || (local_snp && local_snp->get_last_log_idx() == req.get_last_log_idx()
                         && local_snp->get_last_log_term() == req.get_last_log_term());
+    if (!log_okay) {
+        p_wn("log mismatch, req log idx: %zu, req log term: %zu, log term: %zu, "
+             "local_snp idx %zd, local_snp term %zd",
+             req.get_last_log_idx(),
+             req.get_last_log_term(),
+             log_term,
+             local_snp ? local_snp->get_last_log_idx() : -1,
+             local_snp ? local_snp->get_last_log_term() : -1);
+    }
 
     int log_lv = log_okay ? L_TRACE : (supp_exp_warning ? L_INFO : L_WARN);
     static timer_helper log_timer(500 * 1000, true);
@@ -632,8 +631,7 @@ ptr<resp_msg> raft_server::handle_append_entries(req_msg& req) {
         }
     }
     p_lv(log_lv,
-         "[LOG %s] req log idx: %zu, req log term: %zu, my last log idx: %zu, "
-         "my log (%zu) term: %zu",
+         "[LOG %s] req log idx: %zu, req log term: %zu, my last log idx: %zu, my log (%zu) term: %zu",
          (log_okay ? "OK" : "XX"),
          req.get_last_log_idx(),
          req.get_last_log_term(),
@@ -691,9 +689,9 @@ ptr<resp_msg> raft_server::handle_append_entries(req_msg& req) {
     if (req.log_entries().size() > 0) {
         // check if any previous lc/cc is attached
         auto type_ = req.log_entries().at(0)->get_val_type();
-        while (type_ == log_val_type::old_lc || type_ == log_val_type::old_cc) {
+        while (type_ == log_val_type::leader_cert || type_ == log_val_type::commit_cert) {
 
-            if (type_ == log_val_type::old_lc) {
+            if (type_ == log_val_type::leader_cert) {
                 try {
                     auto buf = req.log_entries().at(0)->get_buf_ptr();
                     buf->pos(0);
@@ -704,11 +702,9 @@ ptr<resp_msg> raft_server::handle_append_entries(req_msg& req) {
                     verify_and_save_leader_certificate(req, buf);
                     last_missing_lc_term_idx_ = lc->get_term() + 1;
                 } catch (std::exception& ex) {
-                    p_er("failed to deserialize leader certificate"
-                         "due to error: %s",
-                         ex.what());
+                    p_er("failed to deserialize leader certificate due to error: %s", ex.what());
                 }
-            } else if (type_ == log_val_type::old_cc) {
+            } else if (type_ == log_val_type::commit_cert) {
                 try {
                     auto buf = req.log_entries().at(0)->get_buf_ptr();
                     buf->pos(0);
@@ -719,9 +715,7 @@ ptr<resp_msg> raft_server::handle_append_entries(req_msg& req) {
                     dump_commit_cert(role_, cc);
                     all_commit_certs_[cc->get_term()] = cc;
                 } catch (std::exception& ex) {
-                    p_er("failed to deserialize cc"
-                         "due to error: %s",
-                         ex.what());
+                    p_er("failed to deserialize cc due to error: %s", ex.what());
                 }
             }
 
@@ -733,9 +727,8 @@ ptr<resp_msg> raft_server::handle_append_entries(req_msg& req) {
         }
     }
 
-    //! FORENSICS: check whether the leader certificate (for this leader and for this
-    //! term) is
-    // received and verified
+    //! FORENSICS: check whether the leader certificate (for this leader and for this term) is
+    //! received and verified
     resp->need_lc(last_missing_lc_term_idx_);
     if (term_verified(req.get_term(), req.get_src())) {
         p_tr("leader certificate of term %zu is verified", req.get_term());
@@ -743,6 +736,7 @@ ptr<resp_msg> raft_server::handle_append_entries(req_msg& req) {
         p_wn("leader certificate of term %zu is not verified", req.get_term());
         resp->need_lc(std::min(req.get_term(), last_missing_lc_term_idx_));
         resp->set_next_batch_size_hint_in_bytes(state_machine_->get_next_batch_size_hint_in_bytes());
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
         return resp;
     }
 
@@ -754,13 +748,11 @@ ptr<resp_msg> raft_server::handle_append_entries(req_msg& req) {
     ulong prev_idx = log_idx;
     int64_t conflict;
     if (log_size > 0) {
-
         if (flag_use_ptr() && hash_ptr != nullptr) {
             // timer->start_timer();
             p_tr("check hash pointer of requests appending %zu", log_idx + 1);
             if ((conflict = match_log_entry(req.log_entries(), prev_idx + 1, hash_ptr)) != true) {
-                p_wn("deny illegal hash pointer of requests appending %zu: match failure "
-                     "at %zu -> %zu",
+                p_wn("deny illegal hash pointer of requests appending %zu: match failure at %zu -> %zu",
                      log_idx,
                      prev_idx,
                      conflict);
@@ -778,8 +770,7 @@ ptr<resp_msg> raft_server::handle_append_entries(req_msg& req) {
 
     if (flag_use_leader_sig() && leader_sig != nullptr) {
         if (last_app_log == nullptr) {
-            p_wn("No app log entry found in the request, but leader signature is "
-                 "attached");
+            p_wn("No app log entry found in the request, but leader signature is attached");
         } else {
             if ((conflict = check_leader_sig(last_app_log, leader_sig, req.get_src())) == false) {
                 p_wn("deny illegal signature of log entry: item %zu", req.get_term());
@@ -818,8 +809,7 @@ ptr<resp_msg> raft_server::handle_append_entries(req_msg& req) {
                         dump_commit_cert(role_, cc);
                         all_commit_certs_[cc->get_term()] = cc;
                     } else {
-                        p_wn("[CC] CC of term %zu and index %zu has bad signature from "
-                             "#%d",
+                        p_wn("[CC] CC of term %zu and index %zu has bad signature from Peer %d",
                              cc->get_term(),
                              cc->get_index(),
                              pid);
@@ -906,8 +896,7 @@ ptr<resp_msg> raft_server::handle_append_entries(req_msg& req) {
                 quick_commit_index_ = log_idx - 1;
             }
             if (sm_commit_index_ >= log_idx) {
-                p_er("rollback sm commit index from %zu to %zu, "
-                     "it shouldn't happen and may indicate data loss",
+                p_er("rollback sm commit index from %zu to %zu, it shouldn't happen and may indicate data loss",
                      sm_commit_index_.load(),
                      log_idx - 1);
                 sm_commit_index_ = log_idx - 1;
@@ -1052,9 +1041,7 @@ ptr<resp_msg> raft_server::handle_append_entries(req_msg& req) {
     if (time_ms >= ctx_->get_params()->heart_beat_interval_) {
         // Append entries took longer than HB interval. Warning.
         p_wn("appending entries from peer %d took long time (%d ms)\n"
-             "req type: %d, req term: %ld, "
-             "req l idx: %ld (%zu), req c idx: %ld, "
-             "my term: %ld, my role: %d\n",
+             "req type: %d, req term: %ld, req l idx: %ld (%zu), req c idx: %ld, my term: %ld, my role: %d\n",
              req.get_src(),
              time_ms,
              (int)req.get_type(),
@@ -1088,7 +1075,7 @@ ptr<resp_msg> raft_server::handle_append_entries(req_msg& req) {
         }
         if (k >= 0) {
             ulong idx = k + req.get_last_log_idx() + 1;
-            auto sig = get_signature(*req.log_entries()[k]->serialize_sig());
+            auto sig = get_signature(*req.log_entries()[k]->serialize());
             p_in("Set signature");
             resp->set_signature(sig, idx);
         }
@@ -1132,8 +1119,7 @@ void raft_server::handle_append_entries_resp(resp_msg& resp) {
     if (srv_to_leave_ && srv_to_leave_->get_id() == resp.get_src() && srv_to_leave_->is_stepping_down()
         && resp.get_next_idx() > srv_to_leave_target_idx_) {
         // Catch-up is done.
-        p_in("server to be removed %d fully caught up the "
-             "target config log %zu",
+        p_in("server to be removed %d fully caught up the target config log %zu",
              srv_to_leave_->get_id(),
              srv_to_leave_target_idx_);
         remove_peer_from_peers(srv_to_leave_);
@@ -1154,7 +1140,7 @@ void raft_server::handle_append_entries_resp(resp_msg& resp) {
     p_tr("handle append entries resp (from %d), resp.get_next_idx(): %zu\n", (int)p->get_id(), resp.get_next_idx());
 
     int64 bs_hint = resp.get_next_batch_size_hint_in_bytes();
-    p_tr("peer %d batch size hint: %ld bytes", p->get_id(), bs_hint);
+    p_tr("Peer %d batch size hint: %ld bytes", p->get_id(), bs_hint);
     p->set_next_batch_size_hint_in_bytes(bs_hint);
 
     if (resp.get_accepted()) {
@@ -1165,8 +1151,7 @@ void raft_server::handle_append_entries_resp(resp_msg& resp) {
             p->set_next_log_idx(resp.get_next_idx());
             prev_matched_idx = p->get_matched_idx();
             new_matched_idx = resp.get_next_idx() - 1;
-            p_tr(
-                "peer %d, prev matched idx: %ld, new matched idx: %ld", p->get_id(), prev_matched_idx, new_matched_idx);
+            p_tr("Peer %d, prev matched @%ld, new matched @%ld", p->get_id(), prev_matched_idx, new_matched_idx);
             p->set_matched_idx(new_matched_idx);
             p->set_last_accepted_log_idx(new_matched_idx);
         }
@@ -1185,8 +1170,8 @@ void raft_server::handle_append_entries_resp(resp_msg& resp) {
             // timer->start_timer();
 
             ptr<log_entry> entry = log_store_->entry_at(resp.get_sig_index());
-            if (!p->verify_signature(entry->serialize_sig(), resp.get_signature())) {
-                p_er("peer #%d's signature on entry %d is invalid: %s",
+            if (!p->verify_signature(entry->serialize(), resp.get_signature())) {
+                p_er("Peer %d's signature on entry %d is invalid: %s",
                      p->get_id(),
                      resp.get_sig_index(),
                      resp.get_signature() == nullptr ? "null" : tobase64(*resp.get_signature()).c_str());
@@ -1228,8 +1213,7 @@ void raft_server::handle_append_entries_resp(resp_msg& resp) {
             }
         }
         p_lv(log_lv,
-             "declined append: peer %d, prev next log idx %zu, "
-             "resp next %zu, new next log idx %zu",
+             "Peer %d declined append: prev next log idx %zu, resp next %zu, new next log idx %zu",
              p->get_id(),
              prev_next_log,
              resp.get_next_idx(),
@@ -1247,9 +1231,7 @@ void raft_server::handle_append_entries_resp(resp_msg& resp) {
         //   If `make_busy` fails (very unlikely to happen), next
         //   response handler (of heartbeat, append_entries ..) will
         //   retry this.
-        p_in("ready to resign, server id %d, "
-             "latest log index %zu, "
-             "%zu us elapsed, resign now",
+        p_in("ready to resign, server id %d, latest log index %zu, %zu us elapsed, resign now",
              next_leader_candidate_.load(),
              p_matched_idx,
              reelection_timer_.get_us());
@@ -1301,7 +1283,8 @@ void raft_server::handle_append_entries_resp(resp_msg& resp) {
     // Try to match up the logs for this peer
     if (role_ == srv_role::leader) {
         if (need_to_catchup) {
-            p_db("reqeust append entries need to catchup, p %d\n", (int)p->get_id());
+            //! TODO: This should not be retried indefinitely
+            p_db("request append entries need to catchup, peer %d\n", (int)p->get_id());
             request_append_entries(p);
         }
         if (status_check_timer_.timeout_and_reset()) {

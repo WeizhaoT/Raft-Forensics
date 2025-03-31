@@ -761,8 +761,7 @@ ptr<resp_msg> raft_server::process_req(req_msg& req, const req_ext_params& ext_p
     }
 
     if (resp) {
-        p_db("Response back a %s message to %d with Accepted=%d, "
-             "Term=%llu, NextIndex=%llu",
+        p_db("Response back a %s message to %d with Accepted=%d, Term=%llu, NextIndex=%llu",
              msg_type_to_string(resp->get_type()).c_str(),
              resp->get_dst(),
              resp->get_accepted() ? 1 : 0,
@@ -824,9 +823,7 @@ void raft_server::handle_peer_resp(ptr<resp_msg>& resp, ptr<rpc_exception>& err)
         if (rpc_errs < raft_server::raft_limits_.warning_limit_) {
             p_wn("peer (%d) response error: %s", peer_id, err->what());
         } else if (rpc_errs == raft_server::raft_limits_.warning_limit_) {
-            p_wn("too verbose RPC error on peer (%d), "
-                 "will suppress it from now",
-                 peer_id);
+            p_wn("too verbose RPC error on peer (%d), will suppress it from now", peer_id);
         }
 
         if (pp && pp->is_leave_flag_set()) {
@@ -842,8 +839,7 @@ void raft_server::handle_peer_resp(ptr<resp_msg>& resp, ptr<rpc_exception>& err)
         return;
     }
 
-    p_db("Receive a %s message from peer %d with "
-         "Result=%d, Term=%llu, NextIndex=%llu",
+    p_db("Receive a %s message from peer %d with Result=%d, Term=%llu, NextIndex=%llu",
          msg_type_to_string(resp->get_type()).c_str(),
          resp->get_src(),
          resp->get_accepted() ? 1 : 0,
@@ -943,9 +939,7 @@ ptr<resp_msg> raft_server::handle_reconnect_req(req_msg& req) {
     int32 srv_id = req.get_src();
     ptr<resp_msg> resp(cs_new<resp_msg>(state_->get_term(), msg_type::reconnect_response, id_, srv_id));
     if (role_ != srv_role::leader) {
-        p_er("this node is not a leader "
-             "(upon re-connect req from peer %d)",
-             srv_id);
+        p_er("this node is not a leader (upon re-connect req from peer %d)", srv_id);
         return resp;
     }
 
@@ -965,8 +959,7 @@ ptr<resp_msg> raft_server::handle_reconnect_req(req_msg& req) {
 }
 
 void raft_server::handle_reconnect_resp(resp_msg& resp) {
-    p_in("got re-connection scheduling response "
-         "from leader %d to my id %d, result %s",
+    p_in("got re-connection scheduling response from leader %d to my id %d, result=%s",
          resp.get_src(),
          resp.get_dst(),
          resp.get_accepted() ? "accepted" : "rejected");
@@ -1009,8 +1002,7 @@ void raft_server::become_leader() {
         leadership_transfer_timer_.set_duration_ms(params->leadership_transfer_min_wait_time_);
         leadership_transfer_timer_.reset();
         precommit_index_ = log_store_->next_slot() - 1;
-        p_in("state machine commit index %zu, "
-             "precommit index %zu, last log index %zu",
+        p_in("state machine commit index %zu, precommit index %zu, last log index %zu",
              sm_commit_index_.load(),
              precommit_index_.load(),
              log_store_->next_slot() - 1);
@@ -1090,10 +1082,8 @@ bool raft_server::check_leadership_validity() {
     }
     int32 min_quorum_size = get_quorum_for_commit() + 1;
     if ((num_voting_members - nr_peers) < min_quorum_size) {
-        p_er("%d nodes (out of %d, %zu including learners) are not "
-             "responding longer than %d ms, "
-             "at least %d nodes (including leader) should be alive "
-             "to proceed commit",
+        p_er("%d nodes (out of %d, %zu including learners) are not responding longer than %d ms, "
+             "at least %d nodes (including leader) should be alive to proceed commit",
              nr_peers,
              num_voting_members,
              peers_.size() + 1,
@@ -1166,9 +1156,7 @@ void raft_server::check_leadership_transfer() {
         return;
     }
 
-    p_in("going to transfer leadership to %d, "
-         "my priority %d, max priority %d, "
-         "has been leader for %zu sec",
+    p_in("going to transfer leadership to %d, my priority %d, max priority %d, has been leader for %zu sec",
          successor_id,
          my_priority_,
          max_priority,
@@ -1417,7 +1405,6 @@ void raft_server::handle_ext_resp(ptr<resp_msg>& resp, ptr<rpc_exception>& err) 
         handle_ext_resp_err(*err);
         return;
     }
-    p_db("type: %d, err %p\n", (int)resp->get_type(), err.get());
 
     p_db("Receive an extended %s message from peer %d with Result=%d, "
          "Term=%llu, NextIndex=%llu",
@@ -1456,16 +1443,13 @@ void raft_server::handle_ext_resp(ptr<resp_msg>& resp, ptr<rpc_exception>& err) 
 
 void raft_server::handle_ext_resp_err(rpc_exception& err) {
     ptr<req_msg> req = err.req();
-    p_in("receive an rpc error response from peer server, %s %d", err.what(), req->get_type());
 
     if (req->get_type() == msg_type::install_snapshot_request) {
         if (srv_to_join_ && srv_to_join_->get_id() == req->get_dst()) {
             bool timed_out = check_snapshot_timeout(srv_to_join_);
             if (!timed_out) {
                 // Enable temp HB to retry snapshot.
-                p_wn("sending snapshot to joining server %d failed, "
-                     "retry with temp heartbeat",
-                     srv_to_join_->get_id());
+                p_wn("sending snapshot to joining server %d failed, retry with temp heartbeat", srv_to_join_->get_id());
                 srv_to_join_snp_retry_required_ = true;
                 enable_hb_for_peer(*srv_to_join_);
             }
@@ -1525,9 +1509,7 @@ ulong raft_server::term_for_log(ulong log_idx) {
 
     ptr<snapshot> last_snapshot(state_machine_->last_snapshot());
     if (!last_snapshot || log_idx != last_snapshot->get_last_log_idx()) {
-        p_er("bad log_idx %llu for retrieving the term value, "
-             "will ignore this log req",
-             log_idx);
+        p_er("bad log_idx %llu for retrieving the term value, will ignore this log req", log_idx);
         if (last_snapshot) {
             p_er("last snapshot %p, log_idx %llu, snapshot last_log_idx %llu\n",
                  last_snapshot.get(),
@@ -1810,17 +1792,17 @@ bool raft_server::check_leader_sig(ptr<log_entry> entry, ptr<buffer> sig, int32 
 
     if (entry->get_val_type() != log_val_type::app_log) return true;
     p_tr("Verifying signature");
-    if (!entry->serialize_sig()) {
+    if (!entry->serialize()) {
         p_in("log entry msg is null");
         return true;
     }
-    return p_signer->verify_signature(entry->serialize_sig(), sig);
+    return p_signer->verify_signature(entry->serialize(), sig);
 }
 
 int32 raft_server::validate_commitment_certificate(ptr<certificate> cert, ptr<log_entry> entry) {
     for (auto& it: cert->get_sigs()) {
         if (it.first == id_) {
-            if (!public_key_->verify_md(*entry->serialize_sig(), *it.second)) {
+            if (!public_key_->verify_md(*entry->serialize(), *it.second)) {
                 return it.first;
             }
             continue;
@@ -1829,7 +1811,7 @@ int32 raft_server::validate_commitment_certificate(ptr<certificate> cert, ptr<lo
         if (p == peers_.end()) {
             return it.first;
         }
-        if (!p->second->verify_signature(entry->serialize_sig(), it.second)) {
+        if (!p->second->verify_signature(entry->serialize(), it.second)) {
             return it.first;
         }
     }
@@ -1853,7 +1835,7 @@ bool raft_server::push_new_cert_signature(ptr<buffer> sig, int32 pid, ulong term
     if (it == working_certs_.end()) {
         auto new_cert = cs_new<certificate>(config_->get_servers().size(), term, index);
         new_cert->insert(pid, sig);
-        new_cert->insert(id_, get_signature(*log_store_->entry_at(index)->serialize_sig()));
+        new_cert->insert(id_, get_signature(*log_store_->entry_at(index)->serialize()));
         {
             std::lock_guard<std::mutex> guard(cert_lock_);
             working_certs_[index] = new_cert;

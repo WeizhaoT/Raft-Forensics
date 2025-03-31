@@ -33,8 +33,9 @@ enum log_val_type {
 
     hash_ptr = 11,   //! FORENSICS: for sharing hash pointer
     leader_sig = 12, //! FORENSICS: for leader signature
-    old_lc = 21,
-    old_cc = 22,
+    public_key = 13, //! FORENSICS: for pubkey
+    leader_cert = 21,
+    commit_cert = 22,
 };
 
 }

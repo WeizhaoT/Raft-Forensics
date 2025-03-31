@@ -49,7 +49,7 @@ ptr<srv_config> srv_config::deserialize(buffer_serializer& bs) {
         bs.get_buffer(keybuf);
         pubkey = std::make_shared<pubkey_t>(*keybuf);
     }
-    return cs_new<srv_config>(id, dc_id, endpoint, aux, is_learner, priority);
+    return cs_new<srv_config>(id, dc_id, endpoint, aux, is_learner, priority, pubkey);
 }
 
 ptr<buffer> srv_config::serialize() const {

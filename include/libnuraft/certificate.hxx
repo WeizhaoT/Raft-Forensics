@@ -113,7 +113,7 @@ protected:
 class leader_certificate : public certificate {
 public:
     leader_certificate(int32 num_servers = 0,
-                       ulong term = 0,
+                       ulong term = 1,
                        ulong index = 0,
                        int quorum_ratio_reciprocal = 2,
                        ptr<buffer> req = nullptr)

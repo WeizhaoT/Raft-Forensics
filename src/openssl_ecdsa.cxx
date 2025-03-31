@@ -302,7 +302,7 @@ ptr<buffer> create_hash(ptr<log_entry> le_, ulong height) {
         return nullptr;
     }
 
-    ptr<buffer> serial = le_->serialize_sig();
+    ptr<buffer> serial = le_->serialize();
     size_t msgsize;
     if (serial == nullptr) {
         msgsize = sizeof(ulong);
@@ -408,7 +408,7 @@ bool check_hash(std::vector<ptr<log_entry>>& entries,
 // }
 
 ptr<buffer> create_hash(ptr<log_entry> new_entry, ptr<buffer> curr_ptr, ulong idx) {
-    ptr<buffer> serial = new_entry->serialize_sig();
+    ptr<buffer> serial = new_entry->serialize();
     size_t msgsize;
     if (serial == nullptr) {
         msgsize = sizeof(ulong);

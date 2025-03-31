@@ -35,10 +35,10 @@ namespace nuraft {
  */
 void peer::set_public_key(ptr<pubkey_intf> pubkey) {
     if (pubkey == nullptr) {
-        p_in("Peer pubkey is null");
+        p_in("Peer %d's pubkey is null", get_id());
         return;
     }
-    // p_in("Peer pubkey - %s", pubkey->str().c_str());
+    p_in("Peer %d's pubkey is %s", get_id(), pubkey->str().c_str());
     public_key = pubkey;
 }
 
@@ -50,8 +50,16 @@ std::string peer::get_public_key_str() {
 
 //! FORENSICS: verify sig
 bool peer::verify_signature(ptr<buffer> msg, ptr<buffer> sig) {
-    if (msg == nullptr || sig == nullptr) {
-        // p_in("server %d, verify signature msg or sig is null", config_->get_id());
+    if (msg == nullptr) {
+        p_wn("from Peer %d, verify signature msg is null", get_id());
+        return false;
+    }
+    if (sig == nullptr) {
+        p_wn("from Peer %d, verify signature sig is null", get_id());
+        return false;
+    }
+    if (public_key == nullptr) {
+        p_er("attempting to verify sig by Peer %d with null public key", get_id());
         return false;
     }
     return public_key->verify_md(*msg, *sig);
@@ -72,8 +80,7 @@ void peer::send_req(ptr<peer> myself, ptr<req_msg>& req, rpc_handler& handler) {
     {
         std::lock_guard<std::mutex> l(rpc_protector_);
         if (!rpc_) {
-            // Nothing will be sent, immediately free it
-            // to serve next operation.
+            // Nothing will be sent, immediately free it to serve next operation.
             p_tr("rpc local is null");
             set_free();
             return;
@@ -114,11 +121,19 @@ void peer::handle_rpc_result(ptr<peer> myself,
     }
 
     if (req) {
-        p_tr("resp of req %d -> %d, type %s, %s",
-             req->get_src(),
-             req->get_dst(),
-             msg_type_to_string(req->get_type()).c_str(),
-             (err) ? err->what() : "OK");
+        if (err) {
+            p_wn("resp of req %d -> %d, type %s, %s",
+                 req->get_src(),
+                 req->get_dst(),
+                 msg_type_to_string(req->get_type()).c_str(),
+                 err->what());
+        } else {
+            p_tr("resp of req %d -> %d, type %s, %s",
+                 req->get_src(),
+                 req->get_dst(),
+                 msg_type_to_string(req->get_type()).c_str(),
+                 "OK");
+        }
     }
 
     if (err == nilptr) {

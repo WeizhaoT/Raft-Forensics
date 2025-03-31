@@ -17,6 +17,7 @@ limitations under the License.
 
 #include "buffer_serializer.hxx"
 #include "buffer.hxx"
+#include <iostream>
 
 #include <cstring>
 #include <stdexcept>
@@ -158,14 +159,12 @@ limitations under the License.
 
 namespace nuraft {
 
-buffer_serializer::buffer_serializer(buffer& src_buf,
-                                     buffer_serializer::endianness endian)
+buffer_serializer::buffer_serializer(buffer& src_buf, buffer_serializer::endianness endian)
     : endian_(endian)
     , buf_(src_buf)
     , pos_(0) {}
 
-buffer_serializer::buffer_serializer(ptr<buffer>& src_buf_ptr,
-                                     buffer_serializer::endianness endian)
+buffer_serializer::buffer_serializer(ptr<buffer>& src_buf_ptr, buffer_serializer::endianness endian)
     : endian_(endian)
     , buf_(*src_buf_ptr)
     , pos_(0) {}
@@ -183,7 +182,10 @@ void* buffer_serializer::data() const {
 }
 
 bool buffer_serializer::is_valid(size_t len) const {
-    if (pos() + len > buf_.size()) return false;
+    if (pos() + len > buf_.size()) {
+        std::cerr << "Overflowing " << buf_.size() << " at pos " << pos() << " with " << len;
+        return false;
+    }
     return true;
 }
 
@@ -268,7 +270,7 @@ void buffer_serializer::put_i64(int64_t val) {
 }
 
 void buffer_serializer::put_raw(const void* raw_ptr, size_t len) {
-    if (!is_valid(len)) throw std::overflow_error("not enough space");
+    if (!is_valid(len)) throw std::overflow_error("not enough space in put_raw");
     memcpy(data(), raw_ptr, len);
     pos(pos() + len);
 }
@@ -280,15 +282,13 @@ void buffer_serializer::put_buffer(const buffer& buf) {
 
 void buffer_serializer::put_bytes(const void* raw_ptr, size_t len) {
     if (!is_valid(len + sizeof(uint32_t))) {
-        throw std::overflow_error("not enough space");
+        throw std::overflow_error("not enough space in put_bytes");
     }
     put_u32(len);
     put_raw(raw_ptr, len);
 }
 
-void buffer_serializer::put_str(const std::string& str) {
-    put_bytes(str.data(), str.size());
-}
+void buffer_serializer::put_str(const std::string& str) { put_bytes(str.data(), str.size()); }
 
 void buffer_serializer::put_cstr(const char* str) {
     size_t local_pos = pos_;
@@ -298,7 +298,7 @@ void buffer_serializer::put_cstr(const char* str) {
     size_t ii = 0;
     while (str[ii] != 0x0) {
         if (local_pos >= buf_size) {
-            throw std::overflow_error("not enough space");
+            throw std::overflow_error("not enough space in put_cstr 1");
         }
         ptr[local_pos] = str[ii];
         local_pos++;
@@ -306,7 +306,7 @@ void buffer_serializer::put_cstr(const char* str) {
     }
     // Put NULL character at the end.
     if (local_pos >= buf_size) {
-        throw std::overflow_error("not enough space");
+        throw std::overflow_error("not enough space in put_cstr 2");
     }
     ptr[local_pos++] = 0x0;
     pos(local_pos);
@@ -422,7 +422,7 @@ void buffer_serializer::get_buffer(ptr<buffer>& dst) {
 
 void* buffer_serializer::get_bytes(size_t& len) {
     len = get_u32();
-    if (!is_valid(len)) throw std::overflow_error("not enough space");
+    if (!is_valid(len)) throw std::overflow_error("not enough space in get_bytes");
     return get_raw(len);
 }
 

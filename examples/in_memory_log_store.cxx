@@ -20,6 +20,8 @@ limitations under the License.
 #include "nuraft.hxx"
 
 #include <cassert>
+#include <sstream>
+#include <string>
 
 namespace nuraft {
 
@@ -336,5 +338,20 @@ void inmem_log_store::disk_emul_loop() {
 ulong inmem_log_store::last_app_log_idx() const { return last_app_log_idx_; };
 
 ptr<log_entry> inmem_log_store::last_app_log_entry() { return entry_at(last_app_log_idx_); }
+
+std::string inmem_log_store::display_log_entries() {
+    std::stringstream stream;
+    stream << "[";
+
+    ssize_t i = 0, n = logs_.size();
+    for (const auto& it: logs_) {
+        auto entry = it.second;
+        stream << "(T" << entry->get_term() << ", I" << it.first << ", type " << entry->get_val_type() << ")";
+        if (i < n - 1) stream << "; ";
+        i++;
+    }
+    stream << "]";
+    return stream.str();
+}
 
 } // namespace nuraft

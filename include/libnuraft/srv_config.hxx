@@ -38,10 +38,7 @@ public:
     const static int32 INIT_PRIORITY = 1;
 
     //! FORENSICS: add pubkey
-    srv_config(int32 id,
-               const std::string& endpoint,
-               ptr<pubkey_intf> pubkey = nullptr,
-               std::string private_key = "")
+    srv_config(int32 id, const std::string& endpoint, ptr<pubkey_intf> pubkey = nullptr, std::string private_key = "")
         : id_(id)
         , dc_id_(0)
         , endpoint_(endpoint)
@@ -93,6 +90,8 @@ public:
 
     //! FORENSICS: BEGIN
     ptr<pubkey_intf> get_public_key() const { return public_key_; }
+
+    std::string get_public_key_str() const { return public_key_ == nullptr ? std::string("null") : public_key_->str(); }
 
     void set_public_key(ptr<pubkey_intf> pubkey);
 
